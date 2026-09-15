@@ -19,6 +19,7 @@ the ground_state_mix recovery curriculum has finished ramping.
 """
 
 import math
+import os
 from copy import deepcopy
 
 # Symmetry
@@ -117,6 +118,39 @@ BODY_CMD_ALIVE_ANGLE = 0.05              # rad, stage-0 / permanent-yaw range
 # ("stand at nominal, no command") trained (velocity run-1 lesson — uniform
 # sampling never produces the all-zero command).
 BODY_CMD_ZERO_PROB   = 0.3
+
+# ── Play-time spawn override ──────────────────────────────────────────────────
+# The ground_state_mix curriculum keys off env.common_step_counter, which
+# restarts at 0 in a play session — so it rewrites set_ground_state back to
+# stage 0 (face_up_prob = 0.0) on every step, and a plain `uv run play` can
+# NEVER show a face-up (on-the-back) recovery, the hardest 35% of the
+# end-of-training mix. This override forces the mix and drops the curriculum,
+# play-only. Same pattern as STANDUP_PLAY_FACE_UP in roller_standup /
+# SLOPE_PLAY_DIFFICULTY in roller_slope.
+#   STANDUP_PLAY_FACE_UP=1.0   -> 100% on-the-back spawns
+#   STANDUP_PLAY_FACE_UP=0.35  -> the curriculum's final-stage mix
+#   unset / "none" / "random"  -> default behaviour (curriculum stage 0)
+PLAY_FACE_UP = None
+# face_down:standing ratio of the curriculum's LAST stage (0.30 / 0.15 = 2:1).
+# The remainder (1 - face_up) is split in that ratio, so 0.35 reproduces the
+# end-of-training mix exactly.
+_PLAY_FACE_DOWN_SHARE = 2.0 / 3.0
+
+
+def _resolve_play_face_up():
+    """Share of on-the-back spawns at play: env STANDUP_PLAY_FACE_UP, else the constant."""
+    raw = os.environ.get("STANDUP_PLAY_FACE_UP")
+    if raw is None:
+        return PLAY_FACE_UP
+    raw = raw.strip().lower()
+    if raw in ("", "none", "random"):
+        return None
+    try:
+        return max(0.0, min(1.0, float(raw)))
+    except ValueError:
+        print(f"[standup] STANDUP_PLAY_FACE_UP='{raw}' invalid -> default {PLAY_FACE_UP}")
+        return PLAY_FACE_UP
+
 
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs.mdp import dr
@@ -871,6 +905,23 @@ def make_microduck_standup_env_cfg(
             ],
         },
     )
+
+    # Play override: force on-the-back starts so they can actually be inspected.
+    # The probabilities are written into the event AND the curriculum is removed:
+    # without that, event_param_curriculum (which runs BEFORE the reset events)
+    # would rewrite them back to its stage 0 on the very first reset. play-only,
+    # so training and its easy → hard curriculum are untouched.
+    if play:
+        play_face_up = _resolve_play_face_up()
+        if play_face_up is not None:
+            remainder = 1.0 - play_face_up
+            cfg.events["set_ground_state"].params.update({
+                "face_up_prob":   play_face_up,
+                "face_down_prob": remainder * _PLAY_FACE_DOWN_SHARE,
+                "standing_prob":  remainder * (1.0 - _PLAY_FACE_DOWN_SHARE),
+                "sitting_prob":   0.00,
+            })
+            del cfg.curriculum["ground_state_mix"]
 
     # Head pose command range curriculum — same per-joint widening as the velocity
     # env (5% → 100% of each joint's reachable delta from HOME over ~2000 iters).
