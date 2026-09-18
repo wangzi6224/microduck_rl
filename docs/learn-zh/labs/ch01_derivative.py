@@ -71,7 +71,7 @@ check("误差越大奖励越小", all(rows[i][2] > rows[i + 1][2] for i in range
 print(f"奖励掉到一半的误差：lin {math.sqrt(0.1*math.log(2)):.3f} m/s, ang {math.sqrt(0.5*math.log(2)):.3f} rad/s")
 
 # 这条核的导数：d/d(err) exp(-err²/s²) = -(2·err/s²)·exp(-err²/s²)
-# 误差为 0 时导数为 0（顶点是平的），这就是"高斯核在小误差处没有梯度"的来源。
+# 误差为 0 时导数为 0（顶点是平的），很小的非零误差处导数一般仍非零；这也不是 PPO 直接使用的参数梯度。
 rows = []
 for err in [0.0, 0.05, 0.1, 0.3, 0.6]:
     s2 = 0.1
@@ -107,5 +107,41 @@ ax.set_xlabel("x"); ax.set_ylabel("f(x)")
 ax.set_title("从 x=3 出发走 h 步：h 越小，割线越贴近切线")
 ax.grid(alpha=0.3); ax.legend(fontsize=8)
 savefig(fig, "ch01_secant_to_tangent")
+
+# ---------------------------------------------------------------------------
+banner("6. 相同误差改善、不同加分；导数是局部变化率，不是 PPO 参数梯度")
+def kernel(err, sigma):
+    return math.exp(-(err / sigma) ** 2)
+
+sigma = math.sqrt(0.1)
+rows = []
+for old, new in [(0.05, 0.0), (0.25, 0.20), (1.0, 0.95)]:
+    before, after = kernel(old, sigma), kernel(new, sigma)
+    rows.append([old, new, before, after, after - before])
+table(["改善前误差", "改善后误差", "原奖励", "新奖励", "增加奖励"], rows)
+check("相同改善量，中间区域比顶部和尾部加分多", rows[1][-1] > rows[0][-1] > rows[2][-1])
+peak = sigma / math.sqrt(2)
+print(f"最敏感位置 sigma/sqrt(2) = {peak:.6f}，这里奖励 = {kernel(peak, sigma):.6f}")
+
+fig, axes = plt.subplots(1, 2, figsize=(10, 3.8))
+errors = np.linspace(0, 1.5, 1200)
+for width in [0.1, math.sqrt(0.1), 1.0]:
+    values = np.exp(-(errors / width) ** 2)
+    sensitivity = 2 * errors / width**2 * values
+    label = f"σ={width:.3f}"
+    axes[0].plot(errors, values, label=label)
+    line, = axes[1].plot(errors, sensitivity, label=label)
+    peak = width / math.sqrt(2)
+    axes[1].plot(peak, math.sqrt(2) / width * math.exp(-0.5), "o", color=line.get_color())
+for ax in axes:
+    ax.set_xlabel("误差大小（同一物理量、同一单位）")
+    ax.grid(alpha=0.3)
+    ax.legend()
+axes[0].set_ylabel("奖励 R")
+axes[0].set_title("分数高，不等于对改善最敏感")
+axes[1].set_ylabel("敏感程度 |dR / d误差|")
+axes[1].set_title("圆点：σ/√2；不是 PPO 的参数梯度")
+fig.tight_layout()
+savefig(fig, "ch01_reward_sensitivity")
 
 done()

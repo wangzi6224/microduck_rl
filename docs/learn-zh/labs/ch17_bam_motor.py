@@ -47,7 +47,7 @@ for err_deg in (0.5, 1, 2, 5, 10, 20, 60, 120):
 table(["位置误差 (°)", "占空比（裁剪前）", "电压 V"], rows)
 print(f"误差约 {math.degrees(1.0/(KP*ERROR_GAIN)):.1f}° 时占空比到 1.0 → 电压饱和在 7.5 V，再大的误差也推不动更快。")
 check("误差 120° 时电压饱和 7.5 V", abs(firmware_voltage(math.radians(120), 0.0) - 7.5) < 1e-9)
-print("正常走路时关节误差只有几度，电压只用到零点几伏——舵机远没到极限，限制它的是下面的反电动势和摩擦。")
+print("正常走路时关节误差只有几度，电压只用到零点几伏——这只是电压指令的例子；实际响应还受反电动势、摩擦与负载影响。")
 
 # ---------------------------------------------------------------------------
 banner("3. 直流电机：τ = kt·V/R − kt²·q̇/R（第二项是反电动势：转得越快，推力越小）")
@@ -73,9 +73,9 @@ DT = 0.005
 def simulate(vin, delay_steps=0, friction=0.0, steps=120):
     q, dq, log = 0.0, 0.0, []
     q_target = math.radians(20)
-    cmd_buf = [0.0] * (delay_steps + 1)               # 命令延迟：BAM 的 delay_min_lag..delay_max_lag
+    cmd_buf = [0.0] * delay_steps               # 命令延迟：BAM 的 delay_min_lag..delay_max_lag
     for k in range(steps):
-        cmd_buf.append(q_target); cmd = cmd_buf.pop(0)
+        cmd_buf.append(q_target); cmd = cmd_buf.pop(0)  # lag=0 当步到达，lag=N 等 N 步
         V = firmware_voltage(cmd, q, vin=vin)
         tau = motor_torque(V, dq)
         tau -= friction * np.sign(dq)                  # 库仑摩擦（BAM 用更细的 Stribeck 模型，这里简化）
@@ -85,9 +85,15 @@ def simulate(vin, delay_steps=0, friction=0.0, steps=120):
     return np.array(log)
 
 
+# 检查延迟单位和边界，防止把 lag=0 也额外延迟一帧。
+check("零延迟首步已运动", simulate(7.5, delay_steps=0, steps=1)[0] > 0)
+lagged = simulate(7.5, delay_steps=6, steps=7)
+check("6 步延迟前 6 帧静止，第 7 帧开始运动", np.all(lagged[:6] == 0) and lagged[6] > 0)
+check("6 个物理步是 30 ms", abs(6 * DT - 0.030) < 1e-12)
+
 plt = use_headless_matplotlib()
 fig, ax = plt.subplots(figsize=(6.5, 3.6))
-t = np.arange(120) * DT
+t = (np.arange(120) + 1) * DT  # 记录每次积分结束后的状态
 for label, kw in [("vin=7.5 V", dict(vin=7.5)), ("vin=6.5 V（电池快没电）", dict(vin=6.5)),
                   ("vin=7.5 V + 延迟 6 步(30 ms)", dict(vin=7.5, delay_steps=6)), ("vin=7.5 V + 摩擦 0.05 N·m", dict(vin=7.5, friction=0.05))]:
     ax.plot(t, simulate(**kw), label=label)
@@ -96,7 +102,7 @@ ax.set_xlabel("时间 s"); ax.set_ylabel("关节角 °"); ax.legend(fontsize=8);
 ax.set_title("同一个 20° 阶跃指令，不同电压/延迟/摩擦下的响应")
 savefig(fig, "ch17_bam_step")
 resp = simulate(7.5)
-print(f"7.5 V：0.1 s 时到 {resp[20]:.1f}°，0.6 s 时到 {resp[-1]:.1f}°")
+print(f"7.5 V：0.1 s 时到 {resp[19]:.1f}°，0.6 s 时到 {resp[-1]:.1f}°")
 
 # ---------------------------------------------------------------------------
 banner("5. 域随机化 = 每只机器人抽一组参数：训练目标变成“对参数分布的期望”")
@@ -106,7 +112,7 @@ for name, lo, hi in [("电池电压 vin (V)", 6.5, 8.2), ("压降增益 (V/N·m)
                      ("躯干质心偏移 (m)", -0.003, 0.003), ("IMU 安装误差角 (°)", 0.0, 6.0)]:
     rows.append([name, f"U({lo}, {hi})", (lo + hi) / 2, rng.uniform(lo, hi)])
 table(["随机化的量", "分布", "期望", "这只机器人抽到的"], rows)
-print("4096 只机器人各抽一组。策略必须在“所有可能的机器人”上平均表现好——这就是 sim2real 的数学含义：")
+print("4096 只机器人各抽一组。策略必须在设定的参数分布上平均表现好，不保证每种条件都成功——这就是 sim2real 的数学含义：")
 print("  max_θ E_{参数~分布}[ E[G | 参数] ]，而不是只在一台“标准机器人”上最优。")
 
 done()

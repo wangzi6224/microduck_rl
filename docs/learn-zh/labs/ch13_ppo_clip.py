@@ -71,8 +71,8 @@ ratio_b = torch.exp(new_lp - old_lp)
 adv_b = torch.randn(N)
 clipped_mask = ((ratio_b > 1 + CLIP) & (adv_b > 0)) | ((ratio_b < 1 - CLIP) & (adv_b < 0))
 print(f"ratio 的范围：{ratio_b.min():.3f} ~ {ratio_b.max():.3f}，均值 {ratio_b.mean():.3f}")
-print(f"被裁剪（梯度为 0）的样本比例：{clipped_mask.float().mean()*100:.1f}%")
-print("这个比例太高说明策略一步变太多（大部分样本没梯度了），太低说明裁剪没起作用。")
+print(f"代理项处于平坦区的样本比例：{clipped_mask.float().mean()*100:.1f}%")
+print("高比例提示需核对 KL 与更新幅度；低比例也可能只是更新保守，不能单独判断好坏。")
 
 # ---------------------------------------------------------------------------
 banner("5. 价值损失（clipped）+ 熵 → 总损失，和 ppo.py:304-313 一样")

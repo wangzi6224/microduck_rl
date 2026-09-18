@@ -25,3 +25,10 @@
 ## 四元数（第 2 章 §2.4 承诺的补充）
 - 3Blue1Brown 与 Ben Eater 合作的交互式四元数可视化：eater.net/quaternions。
 - 只需记住：四元数 $q = (w, x, y, z)$，$\|q\|=1$；旋转向量 $v$ 是 $q\,v\,q^{-1}$；MuJoCo 用 (w, x, y, z) 顺序。
+
+
+## 本轮详解的算法核对入口
+
+- [OpenAI Spinning Up：PPO-Clip](https://spinningup.openai.com/en/latest/algorithms/ppo.html)：对照第 13 章，尤其是“移除过度改变的激励”不等于硬约束。该页示例使用 KL 提前停止，本项目用 KL 自适应学习率，不能混写实现。
+- 本地 `rsl_rl/algorithms/ppo.py`：对照 `act`、`process_env_step`、`compute_returns`、`update`。本书第 12 章专门区分超时自举的理论形式与安装版本的实际近似。
+- 本地 `mjlab/actuator/actuator.py` 的 `ActuatorCfg`、`mjlab/entity/entity.py` 的 `_apply_actuator_controls` 与环境的 decimation 循环：对照第 17 章，确认执行器延迟按物理步计数。
