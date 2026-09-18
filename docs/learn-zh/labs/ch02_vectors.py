@@ -377,4 +377,126 @@ check("参数个数 = 31744", n_params == 31744)
 banner("5. 转置：把行变成列")
 print("W.T =\n", W.T, "\n形状", W.shape, "→", W.T.shape)
 
+# ---------------------------------------------------------------------------
+banner("6. 沿哪条轴求和：dim=1 和 dim=0 算的不是一回事")
+E = torch.tensor([[0.1, -0.2],        # A：(前后误差, 左右误差)
+                  [-0.3, 0.4],        # B
+                  [0.1, 0.1]])        # C
+sq = E.square()                       # [3,2] 逐格平方，形状不变
+per_robot = sq.sum(dim=1)             # 把第 1 轴（方向）加没 → 每只机器人一个数
+per_axis = sq.sum(dim=0)              # 把第 0 轴（机器人）加没 → 每个方向一个数
+print("E =\n", E.numpy(), "  形状", tuple(E.shape))
+print("逐格平方 =\n", sq.numpy())
+table(
+    ["写法", "加没的是", "输出形状", "结果", "含义"],
+    [
+        ["sq.sum(dim=1)", "第 1 轴（方向）", str(tuple(per_robot.shape)), str(per_robot.numpy()), "每只机器人一个误差 ✓"],
+        ["sq.sum(dim=0)", "第 0 轴（机器人）", str(tuple(per_axis.shape)), str(per_axis.numpy()), "全队统计量，不是奖励 ✗"],
+    ],
+)
+check("dim=1 → 每只机器人一个数 [0.05, 0.25, 0.02]", np.allclose(per_robot.numpy(), [0.05, 0.25, 0.02]))
+check("dim=0 → 每个方向一个数 [0.11, 0.21]", np.allclose(per_axis.numpy(), [0.11, 0.21]))
+
+reward = torch.exp(-per_robot / 0.1)  # 第 1 章的钟形打分，σ² = 0.1
+print("奖励 exp(−误差²/0.1) =", reward.numpy(), "  形状", tuple(reward.shape))
+print("形状一路：[3,2] → [3,2] → [3] → [3]，进来三只，出去三个分数")
+check("奖励 ≈ [0.606531, 0.082085, 0.818731]",
+      np.allclose(reward.numpy(), [0.606531, 0.082085, 0.818731], atol=1e-6))
+
+print("\n形状体检（表不是方的时候，写错立刻暴露）：")
+act_diff = torch.zeros(2, 14)         # 两只环境 × 14 个关节的动作差
+print("  [2,14].sum(dim=1) →", tuple(act_diff.sum(dim=1).shape), " ← 每只环境一个平滑代价 ✓")
+print("  [2,14].sum(dim=0) →", tuple(act_diff.sum(dim=0).shape), " ← 每个关节跨机器人的合计 ✗")
+check("[2,14] 沿 dim=1 求和 → [2]", tuple(act_diff.sum(dim=1).shape) == (2,))
+big = torch.zeros(24, 4096, 61)       # 时间 × 机器人 × 观测项
+print("  [24,4096,61].sum(dim=2) →", tuple(big.sum(dim=2).shape), " ← 每只机器人每一步一个数 ✓")
+check("[24,4096,61] 沿 dim=2 求和 → [24,4096]", tuple(big.sum(dim=2).shape) == (24, 4096))
+
+print("\n进阶折叠块里的批量矩阵乘（一行 = 一只机器人）：")
+Xb = torch.tensor([[1.0, 2.0], [3.0, 4.0]])          # 2 只机器人，每只 2 项输入
+Wb = torch.tensor([[2.0, 0.0], [1.0, -1.0], [0.0, 3.0]])  # 3 个输出 × 2 项输入
+bb = torch.tensor([0.5, 0.0, -1.0])                  # 偏置（每一行都加同一份“运费”）
+Y = Xb @ Wb.T
+print("  X @ W.T =\n", Y.numpy(), "  形状", tuple(Y.shape))
+print("  加偏置（广播）=\n", (Y + bb).numpy())
+print("  X * X（逐格相乘，不是矩阵乘）=\n", (Xb * Xb).numpy())
+check("XWᵀ = [[2,-1,6],[6,-1,12]]", np.allclose(Y.numpy(), [[2, -1, 6], [6, -1, 12]]))
+check("广播加偏置 = [[2.5,-1,5],[6.5,-1,11]]", np.allclose((Y + bb).numpy(), [[2.5, -1, 5], [6.5, -1, 11]]))
+check("X * X 逐格相乘 = [[1,4],[9,16]]", np.allclose((Xb * Xb).numpy(), [[1, 4], [9, 16]]))
+
+# ---------------------------------------------------------------------------
+banner("6b. 把两条轴画成图：figures/ch02_axes.png")
+C_OK = "#2ca02c"      # 沿 dim=1：要的那种加法
+C_BAD = "#d62728"     # 沿 dim=0：算出来不是奖励
+C_EDGE = "#8fa3bd"
+
+fig = plt.figure(figsize=(12.8, 5.0))
+axL, axR = fig.subplots(1, 2, gridspec_kw={"width_ratios": [1.0, 1.05], "wspace": 0.10})
+
+
+def _cell(ax, x, y, txt, fc="#eef2f7"):
+    ax.add_patch(plt.Rectangle((x, y), 0.92, 0.74, facecolor=fc, edgecolor=C_EDGE, lw=1.3))
+    ax.text(x + 0.46, y + 0.37, txt, ha="center", va="center", fontsize=11.5)
+
+
+# ---- 左：一张 [3,2] 的表，两种加法 -----------------------------------------
+rows_lbl = ["A", "B", "C"]
+cols_lbl = ["前后²", "左右²"]
+sq_np = sq.numpy()
+for j, cl in enumerate(cols_lbl):
+    axL.text(j + 0.46, 3.05, cl, ha="center", va="bottom", fontsize=11, color="#555555")
+for i, rl in enumerate(rows_lbl):
+    y = 2 - i
+    axL.text(-0.18, y + 0.37, rl, ha="right", va="center", fontsize=12, fontweight="bold")
+    for j in range(2):
+        _cell(axL, j, y, f"{sq_np[i][j]:.2f}")
+    axL.annotate("", xy=(2.62, y + 0.37), xytext=(2.02, y + 0.37),
+                 arrowprops=dict(arrowstyle="-|>", color=C_OK, lw=2.0))
+    axL.text(2.72, y + 0.37, f"{per_robot[i]:.2f}", ha="left", va="center",
+             fontsize=12, color=C_OK, fontweight="bold")
+axL.text(4.85, 1.37, "sum(dim=1)\n[3,2] → [3]\n每只机器人一个数 ✓", ha="center", va="center",
+         fontsize=10.5, color=C_OK,
+         bbox=dict(boxstyle="round,pad=0.35", fc="#eefaee", ec=C_OK, lw=1.2))
+for j in range(2):
+    axL.annotate("", xy=(j + 0.46, -0.72), xytext=(j + 0.46, -0.06),
+                 arrowprops=dict(arrowstyle="-|>", color=C_BAD, lw=2.0))
+    axL.text(j + 0.46, -0.95, f"{per_axis[j]:.2f}", ha="center", va="top",
+             fontsize=12, color=C_BAD, fontweight="bold")
+axL.text(0.92, -1.62, "sum(dim=0)：[3,2] → [2]\n全队统计量，当奖励就错 ✗", ha="center", va="top",
+         fontsize=10.5, color=C_BAD,
+         bbox=dict(boxstyle="round,pad=0.35", fc="#fdeeee", ec=C_BAD, lw=1.2))
+axL.set_title("一张 [3, 2] 的表：三只机器人 × 两个方向（已逐格平方）", fontsize=11.5, pad=14)
+axL.set_xlim(-0.8, 6.4)
+axL.set_ylim(-2.6, 3.6)
+axL.set_aspect("equal")
+axL.axis("off")
+
+# ---- 右：三条轴的 [24, 4096, 61] -------------------------------------------
+W_, H_, DX, DY = 3.6, 2.0, 0.46, 0.46
+for k in (2, 1, 0):                       # 从后往前画三张表，代表 24 步里的三步
+    shade = ["#dce6f2", "#e8eef7", "#f3f6fb"][k]
+    axR.add_patch(plt.Rectangle((k * DX, k * DY), W_, H_, facecolor=shade,
+                                edgecolor=C_EDGE, lw=1.3, zorder=3 - k))
+axR.text(W_ / 2, H_ / 2, "一张 [4096, 61] 的表\n（这一步所有机器人的观测）",
+         ha="center", va="center", fontsize=10, zorder=5)
+axR.annotate("", xy=(W_, -0.30), xytext=(0, -0.30),
+             arrowprops=dict(arrowstyle="-|>", color="#1f77b4", lw=2.0))
+axR.text(W_ / 2, -0.52, "第 2 轴：观测 61 项", ha="center", va="top", fontsize=10.5, color="#1f77b4")
+axR.annotate("", xy=(-0.30, 0), xytext=(-0.30, H_),
+             arrowprops=dict(arrowstyle="-|>", color="#7f4fbf", lw=2.0))
+axR.text(-0.45, H_ / 2, "第 1 轴：4096 只机器人\n各自独立，不能串起来", ha="right", va="center",
+         fontsize=10.5, color="#7f4fbf")
+axR.annotate("", xy=(2 * DX + W_ + 0.30, 2 * DY + H_ + 0.30), xytext=(W_ + 0.16, H_ + 0.16),
+             arrowprops=dict(arrowstyle="-|>", color="#e07b39", lw=2.2))
+axR.text(2 * DX + W_ + 0.42, 2 * DY + H_ + 0.30, "第 0 轴：24 步时间\n有先后，第 12 章沿它递推",
+         ha="left", va="center", fontsize=10.5, color="#e07b39")
+axR.set_title("三条轴的张量 [24, 4096, 61]", fontsize=11.5, pad=14)
+axR.set_xlim(-2.6, 8.4)
+axR.set_ylim(-1.5, 4.4)
+axR.set_aspect("equal")
+axR.axis("off")
+
+fig.suptitle("轴 = 表的一个方向；sum(dim=k) 把第 k 轴加没", fontsize=13.5)
+savefig(fig, "ch02_axes")
+
 done()
