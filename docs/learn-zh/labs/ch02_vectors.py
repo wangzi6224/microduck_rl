@@ -1,4 +1,4 @@
-"""第 2 章实验：向量、点积、范数、矩阵乘法，以及“一层神经网络就是一次矩阵乘”。
+"""第 2 章实验：向量、矩阵、张量、坐标轴与数据轴，以及神经网络里的矩阵乘。
 
 运行：uv run python docs/learn-zh/labs/ch02_vectors.py
 纯 CPU，numpy + torch。
@@ -498,5 +498,246 @@ axR.axis("off")
 
 fig.suptitle("轴 = 表的一个方向；sum(dim=k) 把第 k 轴加没", fontsize=13.5)
 savefig(fig, "ch02_axes")
+
+# ---------------------------------------------------------------------------
+banner("7. 数据有几层地址：shape、ndim、numel、索引与求和")
+scalar = torch.tensor(7)
+one_item = torch.tensor([7])
+vector = torch.tensor([3, 4, 5])
+row_vector = torch.tensor([[3, 4, 5]])
+column_vector = torch.tensor([[3], [4], [5]])
+T = torch.tensor([[[1, 2], [3, 4], [5, 6]],
+                  [[7, 8], [9, 10], [11, 12]]])
+table(
+    ["数据", "shape（每条轴的长度）", "ndim（轴数）", "numel（数字总数）"],
+    [[name, tuple(data.shape), data.ndim, data.numel()] for name, data in [
+        ("标量 7", scalar), ("单元素向量 [7]", one_item),
+        ("向量 [3,4,5]", vector), ("一行 [[3,4,5]]", row_vector),
+        ("三行 [[3],[4],[5]]", column_vector), ("两张三行两列表 T", T),
+    ]],
+)
+print("3 维向量的‘3’说的是分量数；1 维张量的‘1’说的是数据轴数。")
+print("一个数也能放进一条轴：7 和 [7] 数字总数一样，形状不同。")
+check("标量：shape=()、ndim=0、numel=1", scalar.shape == torch.Size([]) and scalar.ndim == 0 and scalar.numel() == 1)
+check("单元素向量：shape=(1,)、ndim=1、numel=1", one_item.shape == (1,) and one_item.ndim == 1 and one_item.numel() == 1)
+check("3 维向量用 1 维张量存：shape=(3,)", vector.shape == (3,) and vector.ndim == 1)
+check("行向量和列向量都用 2 维张量存", row_vector.shape == (1, 3) and column_vector.shape == (3, 1))
+check("T 有 3 条轴、12 个数", T.shape == (2, 3, 2) and T.ndim == 3 and T.numel() == 12)
+
+print("\n给每条轴起名字：T[时间, 机器人, 速度项]，编号都从 0 开始。")
+print("速度项 0 = 前后速度，速度项 1 = 左右速度；下面是方便手算的示意数值。")
+for expression, selection in [("T[1]", T[1]), ("T[1,2]", T[1, 2]),
+                              ("T[1,2,0]", T[1, 2, 0]), ("T[:,2,0]", T[:, 2, 0])]:
+    print(f"  {expression:10s} = {selection.tolist()}，shape={tuple(selection.shape)}")
+print("冒号 : 表示这一条轴的全部位置；普通整数索引选中一个位置，并去掉这条轴。")
+check("地址 [1,2,0] 取到第二时刻、第三只机器人、第一项：11", T[1, 2, 0].item() == 11)
+check("切片 [:,2,0] 保留全部时间：[5,11]", torch.equal(T[:, 2, 0], torch.tensor([5, 11])))
+check("逐层选中后，形状 (3,2) → (2,) → ()", T[1].shape == (3, 2) and T[1, 2].shape == (2,) and T[1, 2, 0].shape == ())
+check("一页切片保留页轴，数字与直接取页相同", T[1:2].shape == (1, 3, 2) and torch.equal(T[1:2][0], T[1]))
+check("机器人 2 在两个时刻的记录 = [[5,6],[11,12]]", torch.equal(T[:, 2, :], torch.tensor([[5, 6], [11, 12]])))
+check("自测地址 [0,1,1] = 4", T[0, 1, 1].item() == 4)
+check("不指定 dim 的平方和为标量 0.32", sq.sum().ndim == 0 and math.isclose(sq.sum().item(), 0.32, abs_tol=1e-6))
+
+print("\n沿一条轴求和：让该轴的编号变化，其余编号固定，再把取到的数相加。")
+expected_sums = [
+    torch.tensor([[8, 10], [12, 14], [16, 18]]),
+    torch.tensor([[9, 12], [27, 30]]),
+    torch.tensor([[3, 7, 11], [15, 19, 23]]),
+]
+for dimension, axis_name in enumerate(["时间", "机器人", "速度项"]):
+    result = T.sum(dim=dimension)
+    print(f"  T.sum(dim={dimension})：合并{axis_name}，shape={tuple(result.shape)}，结果={result.tolist()}")
+    check(f"dim={dimension} 的结果与手算一致", torch.equal(result, expected_sums[dimension]))
+print("这些求和用来观察轴；两种速度项相加不等于速度的大小。")
+last_axis_sum = T.sum(dim=-1)
+kept_axis_sum = T.sum(dim=-1, keepdim=True)
+print("  dim=-1 表示最后一条轴：", last_axis_sum.tolist(), "shape=", tuple(last_axis_sum.shape))
+print("  keepdim=True 留下长度为 1 的轴：", kept_axis_sum.tolist(), "shape=", tuple(kept_axis_sum.shape))
+check("3 维张量的 dim=-1 就是 dim=2", torch.equal(last_axis_sum, T.sum(dim=2)))
+check("keepdim 留下单元素轴，数字不变", kept_axis_sum.shape == (2, 3, 1) and torch.equal(kept_axis_sum.squeeze(-1), last_axis_sum))
+check("矩阵配方的两项输出 = [7,1.5]", np.allclose(W @ x, [7, 1.5]))
+
+# 2.4 进阶：R 的列是身体轴的世界坐标；反向换坐标用 R.T。
+angle = math.radians(30)
+rotation = np.array([[math.cos(angle), math.sin(angle)],
+                     [-math.sin(angle), math.cos(angle)]])
+body_gravity = rotation.T @ np.array([0.0, -1.0])
+check("身体轴构成正交旋转，行列式为 1", np.allclose(rotation.T @ rotation, np.eye(2)) and math.isclose(np.linalg.det(rotation), 1.0))
+check("30° 前倾的身体重力 = (0.5, -sqrt(3)/2)", np.allclose(body_gravity, [0.5, -math.sqrt(3) / 2]))
+check("换回世界系，重力仍是 (0,-1)", np.allclose(rotation @ body_gravity, [0.0, -1.0]))
+
+# ---------------------------------------------------------------------------
+banner("7b. 零基础图解：从一个数，到一条记录、一张表、几页表")
+
+# 每张图围绕一个问题；固定数据和上面的实验一致，避免图与手算对不上。
+INK = "#243442"
+MUTED = "#546574"
+BLUE = "#2065a8"
+GREEN = "#28745a"
+ORANGE = "#b75b25"
+
+
+def _lesson_panel(ax, title):
+    ax.set_xlim(0, 10)
+    ax.set_ylim(0, 4)
+    ax.axis("off")
+    ax.text(0, 3.7, title, fontsize=20, fontweight="bold", color=INK, va="top")
+
+
+def _lesson_cells(ax, values, left, bottom, width=1.0, height=0.7,
+                  facecolor="#eaf1f8", highlights=()):
+    """数字格按真实的二维行列绘制；highlights 是要突出显示的 (行, 列)。"""
+    for i, values_row in enumerate(values):
+        for j, value in enumerate(values_row):
+            selected = (i, j) in highlights
+            cell_y = bottom + (len(values) - i - 1) * height
+            ax.add_patch(plt.Rectangle(
+                (left + j * width, cell_y), width, height,
+                facecolor="#fff0d9" if selected else facecolor,
+                edgecolor=ORANGE if selected else "#8ea5b9", lw=2 if selected else 1.2,
+            ))
+            ax.text(left + (j + 0.5) * width, cell_y + height / 2,
+                    f"{value:g}", fontsize=20, ha="center", va="center",
+                    color=ORANGE if selected else INK, fontweight="bold" if selected else "normal")
+
+
+fig, axes = plt.subplots(4, 1, figsize=(9, 13.8))
+fig.subplots_adjust(top=0.93, hspace=0.14)
+fig.suptitle("数字一样普通，摆放方式可以不同", fontsize=23, fontweight="bold", color=INK)
+ax = axes[0]
+_lesson_panel(ax, "① 标量：单独一个数")
+_lesson_cells(ax, [[7]], 0.4, 1.55, 1.35, 1.05)
+ax.text(3.5, 2.05, "shape = ()\n0 条轴 · 一共 1 个数", fontsize=20, va="center", color=BLUE, linespacing=1.8)
+ax.text(0.4, 0.50, "不用先选行、列或页，直接就是 7。", fontsize=18, color=MUTED)
+ax = axes[1]
+_lesson_panel(ax, "② 向量：一条记录，按顺序放数")
+_lesson_cells(ax, [[3, 4]], 0.4, 1.65, 1.25, 0.9)
+ax.text(3.5, 2.05, "shape = (2,)\n1 条轴 · 长度 2 · 共 2 个数", fontsize=20, va="center", color=BLUE, linespacing=1.8)
+ax.text(0.4, 0.55, "选第几个数就够了；逗号说明 shape 只有一项。", fontsize=18, color=MUTED)
+ax = axes[2]
+_lesson_panel(ax, "③ 矩阵：一张表，用行和列找数")
+_lesson_cells(ax, [[1, 2], [3, 4], [5, 6]], 0.4, 0.95, 1.15, 0.70)
+ax.text(3.5, 2.05, "shape = (3, 2)\n2 条轴 · 3 行 × 2 列\n一共 3 × 2 = 6 个数", fontsize=20, va="center", color=BLUE, linespacing=1.55)
+ax.text(0.4, 0.30, "地址需要两项：先选行，再选列。", fontsize=18, color=MUTED)
+ax = axes[3]
+_lesson_panel(ax, "④ 三维张量：按页收好几张表")
+_lesson_cells(ax, T[0].tolist(), 0.2, 1.1, 0.85, 0.60)
+_lesson_cells(ax, T[1].tolist(), 2.2, 1.1, 0.85, 0.60)
+ax.text(1.05, 0.78, "第 0 页", ha="center", fontsize=17, color=MUTED)
+ax.text(3.05, 0.78, "第 1 页", ha="center", fontsize=17, color=MUTED)
+ax.text(4.3, 2.10, "shape = (2, 3, 2)\n3 条轴：页、行、列\n共 2 × 3 × 2 = 12 个数", fontsize=20, va="center", color=BLUE, linespacing=1.55)
+ax.text(0.2, 0.20, "在 PyTorch 里，上面四种数据都可以叫张量。", fontsize=18, color=MUTED)
+savefig(fig, "ch02_number_to_tensor")
+plt.close(fig)
+
+fig, ax = plt.subplots(figsize=(8.2, 8.5))
+fig.subplots_adjust(top=0.85, bottom=0.17, left=0.11, right=0.94)
+fig.suptitle("向量 [3, 4]：往右 3 格，往上 4 格", fontsize=22, fontweight="bold", color=INK)
+ax.set_xlim(-0.6, 5.2)
+ax.set_ylim(-0.6, 5.2)
+ax.set_aspect("equal")
+ax.set_xticks(range(5))
+ax.set_yticks(range(5))
+ax.tick_params(labelsize=16, length=0, pad=8)
+ax.grid(color="#dae2eb", linewidth=1.2)
+for spine in ax.spines.values():
+    spine.set_visible(False)
+ax.annotate("", xy=(5.1, 0), xytext=(0, 0), arrowprops=dict(arrowstyle="-|>", lw=1.9, color=MUTED))
+ax.annotate("", xy=(0, 5.1), xytext=(0, 0), arrowprops=dict(arrowstyle="-|>", lw=1.9, color=MUTED))
+ax.text(5.05, -0.25, "x 轴", fontsize=17, color=MUTED, ha="right")
+ax.text(0.13, 5.0, "y 轴", fontsize=17, color=MUTED, va="top")
+ax.annotate("", xy=(3, 0), xytext=(0, 0), arrowprops=dict(arrowstyle="-|>", lw=4, color=BLUE))
+ax.annotate("", xy=(3, 4), xytext=(3, 0), arrowprops=dict(arrowstyle="-|>", lw=4, color=GREEN))
+ax.annotate("", xy=(3, 4), xytext=(0, 0), arrowprops=dict(arrowstyle="-|>", lw=4, color=ORANGE))
+ax.text(1.50, -0.43, "先往右 3 格", fontsize=18, color=BLUE, ha="center")
+ax.text(3.18, 1.85, "再往上\n4 格", fontsize=18, color=GREEN, linespacing=1.5)
+ax.text(0.73, 2.45, "箭头长度 = 5", rotation=53.13, fontsize=18, color=ORANGE, ha="center", va="center",
+        bbox=dict(facecolor="white", edgecolor="none", alpha=0.95, pad=3))
+ax.plot(3, 4, "o", color=ORANGE, ms=10)
+ax.text(3.17, 4.12, "终点 (3, 4)", fontsize=19, color=INK)
+ax.text(-0.12, -0.15, "原点", fontsize=16, color=MUTED, ha="right", va="top")
+fig.text(0.5, 0.080, "两个分量：x = 3，y = 4；它们描述同一根箭头。", ha="center", fontsize=18, color=INK)
+fig.text(0.5, 0.032, "长度不是 3 + 4：直达的斜线比绕直角走更短。", ha="center", fontsize=18, color=MUTED)
+savefig(fig, "ch02_vector_coordinates")
+plt.close(fig)
+
+fig, axes = plt.subplots(3, 1, figsize=(9, 10.6))
+fig.subplots_adjust(top=0.91, hspace=0.15, bottom=0.08)
+fig.suptitle("3 维向量，可以用 1 维张量存", fontsize=23, fontweight="bold", color=INK)
+for ax, title in zip(axes, ["① 一维数组：[3, 4, 5]", "② 一行矩阵：[[3, 4, 5]]", "③ 一列矩阵：[[3], [4], [5]]"]):
+    _lesson_panel(ax, title)
+ax = axes[0]
+_lesson_cells(ax, [vector.tolist()], 0.4, 1.75, 1.0, 0.85)
+ax.text(0.9, 1.36, "位置 0", fontsize=15, ha="center", color=MUTED)
+ax.text(1.9, 1.36, "位置 1", fontsize=15, ha="center", color=MUTED)
+ax.text(2.9, 1.36, "位置 2", fontsize=15, ha="center", color=MUTED)
+ax.text(4.2, 2.0, "shape = (3,)\n1 条轴，长度为 3", fontsize=20, va="center", color=BLUE, linespacing=1.7)
+ax.text(0.4, 0.55, "画成一排只是方便看；它没有“行”和“列”两条轴。", fontsize=17, color=MUTED)
+ax = axes[1]
+_lesson_cells(ax, row_vector.tolist(), 0.8, 1.60, 1.0, 0.85)
+ax.text(0.59, 2.02, "行 0", fontsize=16, ha="right", va="center", color=MUTED)
+for j in range(3):
+    ax.text(1.3 + j, 2.72, f"列 {j}", fontsize=16, ha="center", color=MUTED)
+ax.text(4.6, 2.0, "shape = (1, 3)\n2 条轴：1 行 × 3 列", fontsize=20, va="center", color=BLUE, linespacing=1.7)
+ax.text(0.4, 0.55, "长度为 1 的轴，仍然算一条轴。", fontsize=18, color=MUTED)
+ax = axes[2]
+_lesson_cells(ax, column_vector.tolist(), 1.0, 0.50, 1.15, 0.72)
+for i in range(3):
+    ax.text(0.8, 0.50 + (2 - i + 0.5) * 0.72, f"行 {i}", fontsize=16, ha="right", va="center", color=MUTED)
+ax.text(1.58, 2.88, "列 0", fontsize=16, ha="center", color=MUTED)
+ax.text(4.2, 2.0, "shape = (3, 1)\n2 条轴：3 行 × 1 列", fontsize=20, va="center", color=BLUE, linespacing=1.7)
+fig.text(0.5, 0.025, "三个数没有变，变的是组织方式和取数地址。", ha="center", fontsize=19, color=INK)
+savefig(fig, "ch02_vector_shapes")
+plt.close(fig)
+
+fig, axes = plt.subplots(3, 1, figsize=(9.4, 10.3))
+fig.subplots_adjust(top=0.90, bottom=0.085, hspace=0.20)
+fig.suptitle("矩阵乘向量：每行是一份配方", fontsize=23, fontweight="bold", color=INK)
+for ax, title in zip(axes, ["输入 x：3 个数，顺序固定", "配方 0：第一行，算出第一个结果", "配方 1：第二行，算出第二个结果"]):
+    _lesson_panel(ax, title)
+_lesson_cells(axes[0], [x.tolist()], 1.6, 1.4, 1.8, 1.0)
+for j, label in enumerate(["第 0 项", "第 1 项", "第 2 项"]):
+    axes[0].text(2.5 + 1.8 * j, 2.72, label, ha="center", fontsize=18, color=MUTED)
+axes[0].text(4.3, 0.62, "两份配方都使用这同一份输入", fontsize=18, color=MUTED, ha="center")
+for row, ax in enumerate(axes[1:]):
+    weights = W[row]
+    _lesson_cells(ax, [weights.tolist()], 0.25, 2.0, 1.15, 0.78,
+                  facecolor="#eaf1f8" if row == 0 else "#e9f2ed")
+    ax.text(4.2, 2.37, f"W 的第 {row} 行", fontsize=19, color=BLUE if row == 0 else GREEN, va="center")
+    expression = "1 × 1  +  0 × 2  +  2 × 3  =  7" if row == 0 else "0.5 × 1  +  (−1) × 2  +  1 × 3  =  1.5"
+    ax.text(0.25, 1.17, expression, fontsize=21, color=BLUE if row == 0 else GREEN)
+    ax.text(0.25, 0.30, "同一位置配对相乘 → 把三个乘积加起来", fontsize=18, color=MUTED)
+fig.text(0.5, 0.053, "W 的 shape (2, 3)  @  x 的 shape (3,)  →  (2,)", fontsize=20, ha="center", color=INK)
+fig.text(0.5, 0.009, "输入有 3 项，每份配方也要 3 项；2 份配方输出 [7, 1.5]。", fontsize=18, ha="center", color=MUTED)
+savefig(fig, "ch02_matrix_recipe")
+plt.close(fig)
+
+fig = plt.figure(figsize=(9.2, 11.6))
+fig.suptitle("三维张量：用三个编号找到一个数", fontsize=23, fontweight="bold", color=INK, y=0.97)
+fig.text(0.5, 0.918, "T 的 shape = (2, 3, 2)", ha="center", fontsize=23, color=BLUE)
+fig.text(0.5, 0.878, "轴 0：2 个时刻    轴 1：3 只机器人    轴 2：2 项速度", ha="center", fontsize=17, color=MUTED)
+axes = fig.subplots(2, 1)
+fig.subplots_adjust(top=0.825, bottom=0.19, left=0.10, right=0.96, hspace=0.35)
+for page, ax in enumerate(axes):
+    ax.set_xlim(0, 10)
+    ax.set_ylim(-0.35, 4.8)
+    ax.axis("off")
+    ax.text(0.0, 4.38, f"时刻 {page}：第 {page} 页", fontsize=21, fontweight="bold", color=ORANGE if page else INK)
+    _lesson_cells(ax, T[page].tolist(), 3.1, 0.65, 2.1, 0.90,
+                  highlights=((2, 0),) if page == 1 else ())
+    for column, label in enumerate(["速度项 0\n前后", "速度项 1\n左右"]):
+        ax.text(4.15 + column * 2.1, 3.62, label, fontsize=18, ha="center", color=BLUE, linespacing=1.4)
+    for robot in range(3):
+        ax.text(2.75, 0.65 + (2 - robot + 0.5) * 0.90, f"机器人 {robot}", fontsize=19, ha="right", va="center",
+                color=ORANGE if page == 1 and robot == 2 else MUTED)
+    if page == 1:
+        ax.annotate("11 在这里", xy=(4.15, 1.10), xytext=(7.9, 0.15),
+                    ha="center", fontsize=19, color=ORANGE,
+                    arrowprops=dict(arrowstyle="->", lw=2, color=ORANGE, connectionstyle="angle3,angleA=0,angleB=-70"))
+fig.text(0.5, 0.129, "T[1, 2, 0] = 11", ha="center", fontsize=26, color=ORANGE, fontweight="bold")
+fig.text(0.5, 0.084, "选时刻 1 → 选机器人 2 → 选速度项 0", ha="center", fontsize=20, color=INK)
+fig.text(0.5, 0.038, "编号从 0 开始；数据轴表示如何分类，不一定是空间方向。", ha="center", fontsize=17, color=MUTED)
+savefig(fig, "ch02_tensor_address")
+plt.close(fig)
 
 done()
