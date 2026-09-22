@@ -1,7 +1,11 @@
 """第 15 章实验（🖥️GPU）：建 4 个 velocity 环境，打印 61 维 actor 观测和 76 维 critic 观测的每一块：名字、维数、一帧真实数值。
 
 运行：uv run python docs/learn-zh/labs/ch15_print_obs.py
-需要 CUDA GPU（mjlab 用 MuJoCo Warp）。
+需要 CUDA GPU（mjlab 用 MuJoCo Warp）。没有 GPU 的读者跑 CPU 伴生实验 ch15_obs_layout.py：
+它不建环境，从 cfg 推出同样的块表并核对正文的每个常数（两个实验互不依赖）。
+正文引用的是本实验的一次存档输出：第 2 节的表在 15.1 节，第 3 节的一帧在 15.2、15.3、15.5 节，
+第 4 节的 critic 表在 15.8 节，第 5 节的噪声与延迟在 15.4 节。
+第 3 节的随机动作和环境都没有固定种子，每次跑出来的那一帧数字不同；块的布局和第 2、4、5 节的表不变。
 """
 # LAB_REQUIRES: gpu
 

@@ -3,6 +3,10 @@
 运行：uv run python docs/learn-zh/labs/ch14_smoke_train.py
 需要 CUDA GPU，约 1 分钟（首次会编译 warp 内核，更久）。
 日志用 tensorboard 而不是 wandb，免登录。
+小节对应正文：1 → 14.10 节（冒烟测试），2 → 14.4 节（一块日志），3 → 14.6 节（惩罚项 ≤ 0），4 → 14.7 节（其余几组），5 → 14.9 节（产物）。
+正文里的手算、从配置读出的常数和全部讲解图，由 CPU 伴生实验 ch14_loop_by_hand.py 复核和生成；
+它会打开这里产出的运行目录（logs/rsl_rl/velocity/*learnzh-ch14*）核对检查点。注意：第 2 节只认 "Learning iteration 4/5" 那一块，
+想多跑几圈就直接用训练命令，不要改这里的 5。
 """
 # LAB_REQUIRES: gpu
 
@@ -47,14 +51,14 @@ def grab(key):
 
 explain = [
     ("Total steps", "累计环境步数 = iteration × num_envs × 24（64 env：每次 1536）"),
-    ("Collection time", "跑 24 步仿真的时间（第 5 章 ①）"),
-    ("Learning time", "20 次 PPO 更新的时间（第 13 章 13.6）"),
-    ("Mean value loss", "critic 的 MSE：(V − returns)²（第 13 章 13.4）"),
-    ("Mean surrogate loss", "−L^CLIP 的平均（第 13 章 13.3，负数正常）"),
-    ("Mean entropy loss", "14 维高斯的熵，σ≈1 时 ≈ 19.86（第 4 章 4.6）"),
+    ("Collection time", "跑 24 步仿真、收一批数据的时间"),
+    ("Learning time", "20 次 PPO 更新（5 遍 × 4 批）的时间（第 13 章）"),
+    ("Mean value loss", "critic 的损失：(V − returns)² 的平均，项目里还套了一层裁剪（第 10 章 10.5、第 13 章）"),
+    ("Mean surrogate loss", "−L^CLIP 的平均（第 13 章；负数正常）"),
+    ("Mean entropy loss", "14 维高斯的熵，σ≈1 时 ≈ 19.86（第 4 章 4.9）"),
     ("Mean reward", "回合内奖励之和的平均（16 项加权和 × 0.02，第 16 章）"),
     ("Mean episode length", "平均回合长度（步）。摔得快就短"),
-    ("Mean action std", "14 个 σ 的平均（第 4 章），初值 1.0"),
+    ("Mean action std", "14 个 σ 的平均（第 4 章 4.7），初值 1.0"),
 ]
 rows = [[k, grab(k), why] for k, why in explain]
 table(["日志行", "本次的值", "它是什么"], rows)
@@ -91,6 +95,6 @@ if run_dirs:
     d = run_dirs[-1]
     for p in sorted(d.iterdir()):
         print("   ", p.name)
-    print("  model_4.pt = 第 4 次迭代的全部旋钮 + 归一化器统计；*.onnx = 已烘焙归一化的 actor（第 19 章）。")
+    print("  model_4.pt = 第 4 次迭代（从 0 数）存下的：actor 与 critic 的全部旋钮（含归一化器统计）、Adam 的两本账；*.onnx = 已烘焙归一化的 actor（第 19 章）。")
 
 done()
