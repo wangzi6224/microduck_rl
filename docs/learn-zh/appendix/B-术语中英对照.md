@@ -140,7 +140,8 @@
 | 课程学习 | curriculum learning | 先易后难的时间表 | §18.1 |
 | 阶梯函数 | step function | 到点才跳一下，两档之间一动不动（课程不是斜坡） | §18.2 |
 | 逆向课程 | reverse curriculum | 先从快做完的地方开始练，再一点点往前挪起点 | §18.9 |
-| 环境步 | environment step | 策略做一次决定 = 0.02 秒；课程表的横轴 = 迭代 × 24 | §14.1（§17.5 和物理步对照，§18.2 当尺子用） |
+| 环境步 | environment step | 策略做一次决定 = 0.02 秒；课程表的横轴 = 迭代 × 24 | §14.1（§18.2 当尺子用） |
+| 物理步 | physics step | 仿真器算一次物理 = 0.005 秒，4 个物理步合成一个环境步 | §14.1（§17.5 用它数延迟） |
 | 检查点 | checkpoint | model_N.pt，全部旋钮 + 统计 | §19.1 |
 | ONNX | Open Neural Network Exchange | 跨框架的计算图文件 | §19.1 |
 | 算子 | operator | 计算图里的一步（Sub、Div、Gemm、Elu…） | §19.2 |

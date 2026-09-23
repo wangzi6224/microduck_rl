@@ -155,9 +155,11 @@ ax.text(1.15, 2.15, f"actor 看的 {n_actor} 个数 ＝ 观测（导出上真机
         color=BLUE, va="center")
 ax.text(1.2, 1.76, f"投影重力 {dict(ACTOR_BLOCKS)['投影重力']}", fontsize=FS_SMALL - 2, color=ORANGE, fontweight="bold",
         va="center")
-ax.text(2.7, 1.76, "· 身体转速 3", fontsize=FS_SMALL - 2, color=INK, va="center")
-ax.text(1.2, 1.40, "· 关节角度 14 · 关节速度 14 · 上一步的动作 14", fontsize=FS_SMALL - 2, color=INK, va="center")
-ax.text(1.2, 1.06, "· 命令 13（人让它往哪走、头摆成什么样）", fontsize=FS_SMALL - 2, color=INK, va="center")
+_blk = dict(ACTOR_BLOCKS)
+ax.text(2.7, 1.76, f"· 身体转速 {_blk['身体转速']}", fontsize=FS_SMALL - 2, color=INK, va="center")
+ax.text(1.2, 1.40, f"· 关节角度 {_blk['关节角度']} · 关节速度 {_blk['关节速度']} · 上一步的动作 {_blk['上一步的动作']}",
+        fontsize=FS_SMALL - 2, color=INK, va="center")
+ax.text(1.2, 1.06, f"· 命令 {_blk['命令']}（人让它往哪走、头摆成什么样）", fontsize=FS_SMALL - 2, color=INK, va="center")
 for i, line in enumerate(("只有仿真器知道、", "两张网络都不看：", "· 地面有多滑", "· 每个零件多重", "· 机身的坐标")):
     ax.text(7.75, 3.50 - 0.42 * i, line, fontsize=FS_SMALL - 3, color=MUTED if i < 2 else INK, va="center")
 note(ax, 0.3, 0.10, "里面那层的每个数，外面那层都有。前进速度在 critic 那一层：状态里有，actor 的观测里没有。")

@@ -118,6 +118,10 @@ table(["", "旧钟（中心 0）", "新钟（中心 0.2）"],
        ["torch 的 log_prob", f"{lp_old_t:.4f}", f"{lp_new_t:.4f}"]])
 print(f"直接除：{h_new:.5f} ÷ {h_old:.5f} = {rho:.4f}")
 print(f"取 ln：{ln_new:.4f} − ({ln_old:.4f}) = {ln_new - ln_old:.4f}；exp({ln_new - ln_old:.2f}) = {math.exp(ln_new - ln_old):.4f}")
+check("字面值重算：exp(−0.125) ÷ √(2π) = 0.35207（正文让读者在控制台敲的那一行）",
+      round(math.exp(-0.125) / math.sqrt(2 * math.pi), 5) == 0.35207)
+check("字面值重算：(1 + 0.1²) ÷ 2 = 0.505，减 0.5 得 0.005",
+      round((1 + 0.1 ** 2) / 2, 3) == 0.505 and round(0.505 - 0.5, 3) == 0.005)
 check("两个高度 0.35207、0.38139；比率 0.38139 ÷ 0.35207 = 1.0833（字面值重算）",
       round(h_old, 5) == 0.35207 and round(h_new, 5) == 0.38139 and round(rho, 4) == 1.0833
       and round(0.38139 / 0.35207, 4) == 1.0833)

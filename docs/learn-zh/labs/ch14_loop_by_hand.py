@@ -371,7 +371,7 @@ check("Steps per second：1536 ÷ 0.578 ≈ 2657 条/秒（64 只 × 24 步 = 15
       round(64 * 24 / 0.578) == 2657 and round(1536 / round(0.538 + 0.040, 3)) == 2657)
 
 # ---------------------------------------------------------------------------
-banner("4b. 画图：figures/ch14_log_groups.png（读一块日志的动线：四组，每组先盯住一行）")
+banner("4b. 画图：figures/ch14_log_groups.png（读一块日志的动线：四组，每组先盯住一处）")
 GROUPS = [  # (组号和组名, [(日志行, 值, 是不是“先看”的那一行)], 看它为了确认什么)
     ("① 计数和计时", [("Total steps", ARCHIVE["Total steps"], True), ("Steps per second", f"≈ {1536 / iter_s:.0f}", False),
                      ("Collection time", ARCHIVE["Collection time"], False), ("Learning time", ARCHIVE["Learning time"], False)],
@@ -397,7 +397,7 @@ ax = fig.add_axes([0, 0, 1, 1])
 ax.set_xlim(0, 10.6)
 ax.set_ylim(0, FIG_H)
 ax.axis("off")
-ax.text(0.3, FIG_H - 0.45, "读一块日志的动线：四组，每组先盯住橙色那一行", fontsize=FS_TITLE, fontweight="bold", color=INK,
+ax.text(0.3, FIG_H - 0.45, "读一块日志的动线：四组，每组先盯住橙色那一处", fontsize=FS_TITLE, fontweight="bold", color=INK,
         va="center")
 ax.text(0.3, FIG_H - 0.92, "数取自存档那次冒烟训练的最后一圈（64 只 × 5 圈）。你自己跑出来的值会不同，分组和动线不变。",
         fontsize=FS_NOTE, color=MUTED, va="center")
