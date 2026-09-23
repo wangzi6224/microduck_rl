@@ -39,7 +39,10 @@ ALL_CHAPTERS = set(range(1, 20))
 REWRITTEN: set[int] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19}   # held to the strict tier
 PENDING_SYNC: set[int] = {16, 18, 19}   # rewritten, but README/appendix refs to them not remapped yet
 B_SYNCED: set[int] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 17}  # appendix B "首次出现" rows rebuilt for these chapters
-WAVE: dict[int, int] = {2: 0, 3: 1, 1: 2, 4: 2, 5: 3, 6: 3, 7: 3, 8: 3, 9: 4, 10: 5, 15: 6, 11: 7, 12: 8, 17: 9, 13: 10, 14: 11, 16: 12, 18: 12, 19: 12}   # a section-numbered ref X→Y (X≠Y) needs WAVE[Y] < WAVE[X]
+WAVE: dict[int, int] = {2: 0, 3: 1, 1: 2, 4: 2, 5: 3, 6: 3, 7: 3, 8: 3, 9: 4, 10: 5, 15: 6, 11: 7, 12: 8, 17: 9, 13: 10, 14: 11, 16: 12, 18: 12, 19: 12}
+# ↑ 各章的定稿顺序，改写期间用来拦"引用了还没写的章"。2026-09-23 全书定稿后这条机械规则退休了：
+# 现在只要求带小节号的引用指向"已定稿的章 + 存在的小节"（小节存在与否由引用解析那一项保证）；
+# 指向后面的章合不合适（读者读到这里还没读过那一章），交给评审判断——第 14 章的"前提倒挂"就是这么抓出来的。
 
 # --- waivers: keyed by file name + substring, never by line number -------------------
 WAIVERS = {
@@ -258,7 +261,7 @@ def wave_problems(doc: Doc) -> list[str]:
     for i, ch, sec, shown in section_refs(doc):
         if sec is None or ch == src or ch not in ALL_CHAPTERS:
             continue
-        if ch not in REWRITTEN or WAVE.get(ch, 99) >= WAVE.get(src, 99):
+        if ch not in REWRITTEN:
             problems.append(
                 f"{doc.name}:{i + 1} 「{shown.strip()}」 带小节号指向尚未定稿的第 {ch} 章——改写成「第 {ch} 章（概念名）」"
             )
