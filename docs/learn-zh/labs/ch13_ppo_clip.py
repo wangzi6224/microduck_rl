@@ -20,8 +20,9 @@ import torch
 from torch.distributions import Normal, kl_divergence
 
 from _common import banner, check, done, lines_in_order, num, savefig, table
-from _draw import (BLUE, CELL, CELL_HOT, FAINT, FS_SMALL, FS_STEP, GREEN, INK, MUTED, ORANGE, WHITE_BOX, arrow,
-                   cell, data_axes, hand, lesson_figure, lesson_panel, note, panel_note, panel_title, plt)
+from _draw import (BLUE, CELL, CELL_HOT, FAINT, FS_SMALL, FS_STEP, FS_TITLE, GREEN, INK, MUTED, ORANGE,
+                   WHITE_BOX, arrow, cell, data_axes, hand, lesson_figure, lesson_panel, note, panel_note,
+                   panel_title, plt)
 
 np.set_printoptions(precision=4, suppress=True)
 torch.set_default_dtype(torch.float64)   # 用双精度，打印出来的末几位和手算一致
@@ -113,15 +114,19 @@ rho = h_new / h_old
 lp_old_t = Normal(MU_OLD, SIG).log_prob(torch.tensor(A_REC)).item()
 lp_new_t = Normal(MU_NEW, SIG).log_prob(torch.tensor(A_REC)).item()
 table(["", "旧钟（中心 0）", "新钟（中心 0.2）"],
-      [["动作 0.5 处的高度", f"{h_old:.5f}", f"{h_new:.5f}"], ["ln 高度", f"{ln_old:.5f}", f"{ln_new:.5f}"],
-       ["torch 的 log_prob", f"{lp_old_t:.5f}", f"{lp_new_t:.5f}"]])
+      [["动作 0.5 处的高度", f"{h_old:.5f}", f"{h_new:.5f}"], ["ln 高度", f"{ln_old:.4f}", f"{ln_new:.4f}"],
+       ["torch 的 log_prob", f"{lp_old_t:.4f}", f"{lp_new_t:.4f}"]])
 print(f"直接除：{h_new:.5f} ÷ {h_old:.5f} = {rho:.4f}")
-print(f"取 ln：{ln_new:.5f} − ({ln_old:.5f}) = {ln_new - ln_old:.5f}；exp({ln_new - ln_old:.2f}) = {math.exp(ln_new - ln_old):.4f}")
+print(f"取 ln：{ln_new:.4f} − ({ln_old:.4f}) = {ln_new - ln_old:.4f}；exp({ln_new - ln_old:.2f}) = {math.exp(ln_new - ln_old):.4f}")
 check("两个高度 0.35207、0.38139；比率 0.38139 ÷ 0.35207 = 1.0833（字面值重算）",
       round(h_old, 5) == 0.35207 and round(h_new, 5) == 0.38139 and round(rho, 4) == 1.0833
       and round(0.38139 / 0.35207, 4) == 1.0833)
+check("两个 ln 高度 −1.0439、−0.9639（正文和 13.0 的总览图印的就是这两个数；字面值重算：ln 0.35207、ln 0.38139）",
+      round(ln_old, 4) == -1.0439 and round(ln_new, 4) == -0.9639
+      and round(math.log(0.35207), 4) == -1.0439 and round(math.log(0.38139), 4) == -0.9639)
 check("ln 之差 = (0.5² − 0.3²) ÷ 2 = (0.25 − 0.09) ÷ 2 = 0.08：钟高公式里的 ln(σ√(2π)) 相减时抵消了",
-      math.isclose(ln_new - ln_old, 0.08) and math.isclose((0.25 - 0.09) / 2, 0.08))
+      math.isclose(ln_new - ln_old, 0.08) and math.isclose((0.25 - 0.09) / 2, 0.08)
+      and round(-0.9639 - (-1.0439), 4) == 0.08)
 check("两条路同一个数：exp(0.08) = 1.0833 = 高度之比；torch 的 log_prob 也给出同样的差",
       round(math.exp(0.08), 4) == 1.0833 and math.isclose(math.exp(lp_new_t - lp_old_t), rho))
 
@@ -138,6 +143,12 @@ lp_a = Normal(net(obs), 1.0).log_prob(act).sum(dim=-1)
 lp_b = Normal(net(obs), 1.0).log_prob(act).sum(dim=-1)
 check("第一次更新之前，新旧是同一张网络：14 个 ln 密度相加后相减恰好是 0，比率全是 1",
       torch.equal(torch.exp(lp_b - lp_a), torch.ones(5)))
+print(f"2 个关节的迷你版：ln 1.1 = {math.log(1.1):.4f}，ln 0.9 = {math.log(0.9):.4f}；相加 {math.log(1.1) + math.log(0.9):.4f}，"
+      f"exp 回去 {math.exp(math.log(1.1) + math.log(0.9)):.2f} = 1.1 × 0.9")
+check("迷你版：ln 1.1 = 0.0953、ln 0.9 = −0.1054，相加 −0.0101，exp(−0.0101) = 0.99 = 1.1 × 0.9（字面值重算）",
+      round(math.log(1.1), 4) == 0.0953 and round(math.log(0.9), 4) == -0.1054
+      and round(0.0953 + (-0.1054), 4) == -0.0101 and round(math.exp(-0.0101), 2) == 0.99
+      and round(1.1 * 0.9, 2) == 0.99)
 check("14 个关节：比率 = 14 个关节各自比率的乘积；每个 1.02，合起来 1.02^14 = 1.3195，已经超过 1.2",
       round(1.02 ** 14, 4) == 1.3195 and math.isclose(math.exp(14 * math.log(1.02)), 1.02 ** 14))
 
@@ -207,7 +218,7 @@ panel_note(fig, [ax], "两口钟一样宽（σ = 1），新钟往右挪了 0.2�
 ax2 = fig.add_axes([0.03, 0.0, 0.94, 0.27])
 lesson_panel(ax2, "② 比率 = 两个高度相除；代码先取 ln 再相减，是同一个数", xmax=10, ymax=4.0)
 hand(ax2, 0.3, 2.85, f"直接除：{h_new:.5f} ÷ {h_old:.5f} = {rho:.4f}")
-hand(ax2, 0.3, 2.0, f"取 ln：{m(ln_new)} − ({m(ln_old)}) = {ln_new - ln_old:.2f}", color=GREEN)
+hand(ax2, 0.3, 2.0, f"取 ln：{m(ln_new, '.4f')} − ({m(ln_old, '.4f')}) = {ln_new - ln_old:.2f}", color=GREEN)
 hand(ax2, 0.3, 1.2, f"再 exp：exp({ln_new - ln_old:.2f}) = {math.exp(ln_new - ln_old):.4f}", color=GREEN)
 note(ax2, 0.3, 0.35, "相减时，钟高公式里的 ln(σ√(2π)) 两边一样大，抵消了（这里的 π 是 3.14159…）。")
 savefig(fig, "ch13_ratio_density")
@@ -411,6 +422,18 @@ check("V = 0.35（没挪够 0.2）→ 两个都是 0.0225，斜率 2 × (0.35 �
 check("V = −0.1（往反方向跑）→ max(0.36, 0.25) = 0.36，用不裁剪版，斜率 −1.2，照常拉回",
       math.isclose(vparts[-0.1][0], 0.36) and math.isclose(vparts[-0.1][2], 0.25) and math.isclose(vparts[-0.1][3], 0.36)
       and math.isclose(vparts[-0.1][4], -1.2))
+# 平坦区只有 0.4 ~ 0.6 这一段：(V − 0.5)² 重新超过 0.01 之后，取大的又取回不裁剪版
+rows = [[num(v), num(value_loss_parts(v)[3]), num(value_loss_parts(v)[4])] for v in (0.45, 0.55, 0.65, 0.7)]
+table(["更新后的 V", "取大的", "对 V 的斜率"], rows)
+print("平坦区只有 0.4 ~ 0.6 这一段：两端 (0.4 − 0.5)² = (0.6 − 0.5)² = 0.01，和封顶值一样大；再往右不裁剪的那个又更大了")
+check("平坦区是 0.4 ~ 0.6：中间（0.45、0.55）斜率恰好 0；出了 0.6（0.65、0.7）又回到斜线，斜率 +0.3、+0.4",
+      value_loss_parts(0.45)[4] == 0.0 and value_loss_parts(0.55)[4] == 0.0
+      and math.isclose(value_loss_parts(0.65)[3], 0.0225) and math.isclose(value_loss_parts(0.65)[4], 0.3)
+      and math.isclose(value_loss_parts(0.7)[4], 0.4) and math.isclose((0.4 - 0.5) ** 2, 0.01)
+      and math.isclose((0.6 - 0.5) ** 2, 0.01))
+check("自测：V = 0.7 → 不裁剪 (0.7 − 0.5)² = 0.04，裁剪版仍是 (0.4 − 0.5)² = 0.01，取大的 0.04，用的是不裁剪版（字面值重算）",
+      math.isclose(value_loss_parts(0.7)[0], 0.04) and math.isclose(value_loss_parts(0.7)[2], 0.01)
+      and math.isclose(value_loss_parts(0.7)[3], 0.04) and math.isclose((0.7 - 0.5) ** 2, 0.04))
 
 ent_one = Normal(0.0, 1.0).entropy().item()
 ent14 = Normal(torch.zeros(14), torch.ones(14)).entropy().sum().item()
@@ -438,6 +461,101 @@ rho_moved = torch.exp(0.05 * adv_n)                                  # 教学构
 sl_moved = torch.max(-adv_n * rho_moved, -adv_n * torch.clamp(rho_moved, LO, HI)).mean().item()
 print(f"比率往好的方向挪一点（ρ = exp(0.05 × Â)）：surrogate_loss = {sl_moved:.3f}")
 check("策略往好的方向挪了一点，surrogate_loss 就成了小负数 −0.044", round(sl_moved, 3) == -0.044)
+
+# ---------------------------------------------------------------------------
+banner("4b. 画图：figures/ch13_value_clip.png（价值裁剪：夹的是 V 挪了多远，两个里取大的）")
+V_LO, V_HI = V_OLD - 0.2, V_OLD + 0.2                                 # V 允许算进去的范围：旧 V ± 0.2
+
+
+def v_curves(xs):
+    """三条线：不裁剪、裁剪版、两个里取大的（真正进损失的那条）。"""
+    un = (xs - RET) ** 2
+    cl = (np.clip(xs, V_LO, V_HI) - RET) ** 2
+    return un, cl, np.maximum(un, cl)
+
+
+fig = plt.figure(figsize=(10, 15.0))
+ax1 = fig.add_axes([0.14, 0.720, 0.81, 0.185])
+ax2 = fig.add_axes([0.14, 0.440, 0.81, 0.185])
+ax_cmp = fig.add_axes([0.03, 0.035, 0.94, 0.295])
+fig.suptitle("价值裁剪：夹的是 V 挪了多远，两个里取大的", fontsize=FS_TITLE, fontweight="bold", color=INK, y=0.968)
+
+xs1 = np.linspace(-0.2, 0.8, 500)
+un1, cl1, mx1 = v_curves(xs1)
+data_axes(ax1, "更新后的 V（critic 现在给这条记录打的分）", "这一条记录的价值损失")
+ax1.axvspan(V_LO, V_HI, color=CELL, zorder=0)
+ax1.text((V_LO + V_HI) / 2, 0.395, f"{num(V_LO)} ~ {num(V_HI)}（旧 V {num(V_OLD)} ± 0.2）", color=BLUE,
+         fontsize=FS_SMALL - 2, ha="center", va="center")
+ax1.plot(xs1, un1, color=FAINT, lw=2.4, ls="--")
+ax1.plot(xs1, cl1, color=ORANGE, lw=2.4, ls=":")
+ax1.plot(xs1, mx1, color=BLUE, lw=3.4)
+ax1.axvline(RET, color=GREEN, lw=1.4, ls=":")
+ax1.text(RET + 0.015, 0.335, "标签 0.5", color=GREEN, fontsize=FS_SMALL - 1, va="center")
+ax1.scatter([-0.1], [vparts[-0.1][3]], s=110, color=BLUE, zorder=6)
+ax1.scatter([-0.1], [vparts[-0.1][2]], s=80, color=ORANGE, zorder=5)
+ax1.text(-0.065, 0.362, f"V = −0.1：取大的 = {num(vparts[-0.1][3])}", color=BLUE, fontsize=FS_SMALL - 1,
+         ha="left", va="center", bbox=WHITE_BOX)
+ax1.text(-0.065, 0.245, f"裁剪版只有 {num(vparts[-0.1][2])}，没取它", color=ORANGE, fontsize=FS_SMALL - 2,
+         ha="left", va="center", bbox=WHITE_BOX)
+ax1.text(0.215, 0.215, "灰虚线：不裁剪 (V − 0.5)²（多半被蓝线压着）", color=MUTED, fontsize=FS_SMALL - 2, va="center")
+ax1.text(0.215, 0.172, "橙点线：裁剪版（V 先夹进 0 ~ 0.4 再算）", color=ORANGE, fontsize=FS_SMALL - 2, va="center")
+ax1.text(0.215, 0.129, "蓝实线：两个里取大的 = 真正进损失的", color=BLUE, fontsize=FS_SMALL - 2, va="center")
+ax1.set_xlim(-0.2, 0.8)
+ax1.set_ylim(0, 0.42)
+ax1.set_xticks([-0.1, 0, 0.2, 0.4, 0.6, 0.8])
+ax1.set_xticklabels([m(t, "g") for t in (-0.1, 0, 0.2, 0.4, 0.6, 0.8)])
+ax1.set_yticks([0, 0.1, 0.25, 0.36])
+ax1.set_yticklabels(["0", "0.1", "0.25", "0.36"])
+panel_title(fig, [ax1], "① 全景：采数据时 V = 0.2，标签 0.5，更新后 V 挪到哪算哪")
+panel_note(fig, [ax1], "V 往反方向跑到 −0.1：不裁剪的 0.36 比裁剪版的 0.25 大，取大的取到它，照常把 critic 拉回来。")
+
+xs2 = np.linspace(0.28, 0.8, 500)
+un2, cl2, mx2 = v_curves(xs2)
+data_axes(ax2, "更新后的 V", "价值损失（放大看）")
+ax2.axvspan(0.28, V_HI, color=CELL, zorder=0)
+ax2.plot(xs2, un2, color=FAINT, lw=2.4, ls="--")
+ax2.plot(xs2, cl2, color=ORANGE, lw=2.4, ls=":")
+ax2.plot(xs2, mx2, color=BLUE, lw=3.4)
+flat = (xs2 >= V_HI) & (xs2 <= 0.6)
+ax2.plot(xs2[flat], mx2[flat], color=ORANGE, lw=7, solid_capstyle="butt", zorder=4)
+for v_new, col in ((0.35, BLUE), (0.55, ORANGE), (0.65, BLUE)):
+    ax2.scatter([v_new], [value_loss_parts(v_new)[3]], s=110, color=col, zorder=6)
+ax2.scatter([0.55], [vparts[0.55][0]], s=80, color=FAINT, zorder=5)
+arrow(ax2, (0.55, vparts[0.55][0]), (0.55, vparts[0.55][3] - 0.0006), ORANGE, lw=2.0)
+ax2.text(0.362, 0.0315, f"V = 0.35：两个都是 {num(vparts[0.35][3])}", color=BLUE, fontsize=FS_SMALL - 1,
+         ha="left", va="center", bbox=WHITE_BOX)
+ax2.text(0.50, 0.0182, f"V = 0.55：max({num(vparts[0.55][0])}, {num(vparts[0.55][3])}) = {num(vparts[0.55][3])}",
+         color=ORANGE, fontsize=FS_SMALL - 1, ha="center", va="center", bbox=WHITE_BOX)
+ax2.text(0.662, 0.0305, f"V = 0.65：又是 {num(value_loss_parts(0.65)[3])}，斜率回来了",
+         color=BLUE, fontsize=FS_SMALL - 1, ha="center", va="center", bbox=WHITE_BOX)
+ax2.text(0.462, 0.0058, "平坦区：斜率 0", color=ORANGE, fontsize=FS_SMALL - 1, ha="center", va="center")
+ax2.set_xlim(0.28, 0.8)
+ax2.set_ylim(0, 0.042)
+ax2.set_xticks([0.3, 0.4, 0.5, 0.6, 0.7, 0.8])
+ax2.set_xticklabels([f"{t:g}" for t in (0.3, 0.4, 0.5, 0.6, 0.7, 0.8)])
+ax2.set_yticks([0, 0.01, 0.0225, 0.04])
+ax2.set_yticklabels(["0", "0.01", "0.0225", "0.04"])
+panel_title(fig, [ax2], "② 放大右半边：平坦区只有 0.4 ~ 0.6 这一段")
+panel_note(fig, [ax2], "橙色平台的高度不随 V 变，斜率 0：这条记录不再推 critic。\n"
+                       "可 V 一过 0.6，灰虚线又比 0.01 高了，取大的重新取到它——平坦区是有头的。")
+
+lesson_panel(ax_cmp, "③ 两道裁剪，夹的东西和取的方向都不同", xmax=10.4, ymax=6.2)
+ax_cmp.text(3.55, 5.15, "13.3 比率裁剪（actor）", color=BLUE, fontsize=FS_SMALL, ha="center", va="center")
+ax_cmp.text(7.55, 5.15, "13.4 价值裁剪（critic）", color=ORANGE, fontsize=FS_SMALL, ha="center", va="center")
+CMP = [("夹的是", "比率 ρ 本身", "V 离“旧 V”有多远"),
+       ("夹成", f"0.8 ~ 1.2（1 ± {num(CLIP)}）", f"{num(V_LO)} ~ {num(V_HI)}（旧 V {num(V_OLD)} ± 0.2）"),
+       ("两个里取", "小的（目标要变大）", "大的（损失要变小）"),
+       ("都是这一句", "挪过头的好处不算", "挪过头的好处不算")]
+for j, (lab, a_, b_) in enumerate(CMP):
+    y = 4.25 - j * 0.88
+    ax_cmp.text(0.15, y, lab, color=MUTED, fontsize=FS_SMALL, va="center")
+    cell(ax_cmp, 1.75, y - 0.30, a_, width=3.6, height=0.60, fontsize=FS_SMALL - 1, color=BLUE)
+    cell(ax_cmp, 5.75, y - 0.30, b_, width=3.6, height=0.60, fontsize=FS_SMALL - 1, color=ORANGE,
+         facecolor=CELL_HOT)
+note(ax_cmp, 0.15, 0.45, "两边都是“往坏处想”：往有利的方向走过了头就不再给分，往不利的方向走照罚。\n"
+                         "两处读的还是同一个设置 clip_param = 0.2，可单位一个是倍数、一个是价值本身。")
+savefig(fig, "ch13_value_clip")
+plt.close(fig)
 
 # ---------------------------------------------------------------------------
 banner("5. KL 散度：两口钟差多远；超过 0.02 学习率 ÷ 1.5，不到 0.005 × 1.5")
@@ -502,11 +620,14 @@ def adapt(lr, kl):
 
 
 KL_SEQ = [0.03, 0.025, 0.012, 0.004, 0.003, 0.02]              # 旧稿的六次
+KL_WHERE = ["大于 0.02", "大于 0.02", "中间（0.005 ~ 0.02）", "小于 0.005", "小于 0.005", "恰好等于 0.02"]
+KL_HOW = ["0.001 ÷ 1.5", "再 ÷ 1.5 = 0.001 ÷ 2.25", "不动", "× 1.5", "再 × 1.5", "不动（规则写的是“大于”）"]
 lr, lr_seq = 1e-3, []
 for kl in KL_SEQ:
     lr = adapt(lr, kl)
     lr_seq.append(lr)
-table(["这次量到的 KL", "调整后的学习率", "以 0.001 为单位"], [[f"{k:g}", f"{v:.9f}", f"{v / 1e-3:.4f}"] for k, v in zip(KL_SEQ, lr_seq)])
+table(["这次量到的 KL", "落在哪一段", "怎么算", "学习率"],
+      [[f"{k:g}", w, h, f"{v:.8f}".rstrip("0")] for k, w, h, v in zip(KL_SEQ, KL_WHERE, KL_HOW, lr_seq)])
 check("0.03 > 0.02：0.001 ÷ 1.5 = 0.00066667；0.025：再 ÷ 1.5，= 0.001 ÷ 2.25 = 0.00044444（字面值重算）",
       math.isclose(lr_seq[0], 0.001 / 1.5) and round(lr_seq[0], 8) == 0.00066667
       and math.isclose(lr_seq[1], 0.001 / 2.25) and round(lr_seq[1], 8) == 0.00044444)
@@ -524,7 +645,7 @@ check("上下限：连着 20 次太大，学习率停在 0.00001；连着 20 次
 lr_t = [adapt(1e-3, 0.021)]
 lr_t.append(adapt(lr_t[-1], 0.02))
 lr_t.append(adapt(lr_t[-1], 0.004))
-check("自测：0.021 → 0.001 × 2/3 = 0.00066667；0.02 → 不动；0.004 → × 1.5，回到 0.001",
+check("自测：0.021 → 0.001 ÷ 1.5 = 0.00066667；0.02 → 不动；0.004 → × 1.5，回到 0.001",
       round(lr_t[0], 8) == 0.00066667 and lr_t[1] == lr_t[0] and math.isclose(lr_t[2], 0.001))
 
 # 进阶折叠：第一次更新时 KL 真的是 0 吗？用 rsl_rl 自己的网络类（带输入归一化）演示
@@ -651,14 +772,14 @@ check("总览图 ③：比率 1.0833 在范围里，目标 1.0833 × 2 = 2.1666�
 fig, axes = lesson_figure(4, "PPO：旧数据接着用，但每一次更新都看住“变了多少”", panel_height=3.15, width=10.8)
 ax = axes[0]
 lesson_panel(ax, "① 旧策略采数据：每条记录存下动作、当时的 ln π、优势", xmax=10.8, ymax=4.0)
-for i, (lab, val) in enumerate([("动作", "0.5"), ("当时的 ln π", m(ln_old)), ("优势 Â", "+2")]):
+for i, (lab, val) in enumerate([("动作", "0.5"), ("当时的 ln π", m(ln_old, ".4f")), ("优势 Â", "+2")]):
     ax.text(0.5 + i * 3.4, 2.75, lab, fontsize=FS_SMALL, color=MUTED, va="center")
     cell(ax, 0.5 + i * 3.4, 1.55, val, width=2.6, height=0.8)
 note(ax, 0.3, 0.55, "这些数只当数据存下来；之后 20 次更新都拿它们来比。")
 ax = axes[1]
 lesson_panel(ax, "② 更新时，用现在的网络对同一个动作重算 ln π", xmax=10.8, ymax=4.0)
-hand(ax, 0.3, 2.45, f"现在的 ln π = {m(ln_new)}")
-hand(ax, 0.3, 1.5, f"比率 = exp({m(ln_new)} − ({m(ln_old)})) = exp(0.08) = {rho:.4f}")
+hand(ax, 0.3, 2.45, f"现在的 ln π = {m(ln_new, '.4f')}")
+hand(ax, 0.3, 1.5, f"比率 = exp({m(ln_new, '.4f')} − ({m(ln_old, '.4f')})) = exp(0.08) = {rho:.4f}")
 note(ax, 0.3, 0.55, "比率 > 1：现在的网络比采数据时更爱这个动作。")
 ax = axes[2]
 lesson_panel(ax, "③ 裁剪：比率走出 0.8 ~ 1.2，有利的那一边不再加分", xmax=10.8, ymax=4.0)

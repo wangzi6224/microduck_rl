@@ -109,6 +109,7 @@
 | 重要性采样 / 比率 | importance sampling / ratio | 用旧数据估新期望 | §13.2 |
 | 裁剪 | clipping | 比率超出 [0.8,1.2] 停止奖励 | §13.3 |
 | 代理目标 | surrogate objective | 可安全优化的替身 L^CLIP | §13.4 |
+| 价值裁剪 | value clipping | critic 那边的裁剪：夹的是 V 离旧 V 多远，两个损失里取**大**的 | §13.4 |
 | KL 散度 | KL divergence | 两个分布的距离 | §13.5 |
 | 自适应学习率 | adaptive learning rate | 按 KL 自动调学习率：超过目标的 2 倍就 ÷ 1.5，不到一半就 × 1.5 | §13.5 |
 | PPO | proximal policy optimization | 加了一道"别改太多"保险的策略梯度 | §13.3 |

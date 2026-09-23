@@ -578,10 +578,15 @@ table(["平均几次", "最好的 λ", "那时离真值", "λ = 0.95 时离真�
       [[f"{n:,}", num(best[n], 2), f"{total_error(best[n], n):.4f}", f"{total_error(0.95, n):.4f}"] for n in best])
 check("最好的 λ 随样本变多往 1 挪：平均 1 次时 0，100 次 0.83，1000 次 0.94，10000 次 0.98",
       [best[n] for n in (1, 100, 1000, 10000)] == [0.0, 0.83, 0.94, 0.98])
+check("正文那张表的后两列：最好的 λ 时离真值 0.5208、0.1076、0.0491、0.0200；λ = 0.95 时 1.4324、0.1447、0.0498、0.0252",
+      [f"{total_error(best[n], n):.4f}" for n in (1, 100, 1000, 10000)] == ["0.5208", "0.1076", "0.0491", "0.0200"]
+      and [f"{total_error(0.95, n):.4f}" for n in (1, 100, 1000, 10000)] == ["1.4324", "0.1447", "0.0498", "0.0252"])
+check("按印出来的数重算：只平均 1 次时，λ = 0.95 离真值 √(0.0208² + 1.4322²) = 1.4324（吵声完全压过偏差）",
+      round(math.sqrt(0.0208 ** 2 + 1.4322 ** 2), 4) == 1.4324)
 
 # ---------------------------------------------------------------------------
-banner("5b. 画图：figures/ch12_bias_variance.png（一次估计、1000 次平均、总误差）")
-fig = plt.figure(figsize=(10.6, 18.0))
+banner("5b. 画图：figures/ch12_bias_variance.png（一次估计 vs 1000 次平均）")
+fig = plt.figure(figsize=(10.6, 12.0))
 fig.suptitle("λ 小：平均起来偏；λ 大：一次一次很吵", fontsize=FS_TITLE, fontweight="bold", color=INK, y=0.99)
 lam_color = {0.0: BLUE, 0.5: FAINT, 0.8: FAINT, 0.9: FAINT, 0.95: ORANGE, 1.0: GREEN}
 N_DOTS = 2000
@@ -603,14 +608,14 @@ def strip(ax, data_by_lam, xlim):
     ax.axvline(0, color=MUTED, ls=":", lw=1.8, zorder=4)
 
 
-ax = fig.add_axes([0.14, 0.715, 0.82, 0.20])
+ax = fig.add_axes([0.14, 0.555, 0.82, 0.30])
 data_axes(ax, "一次估计 Â₀", "")
 half1 = 3.2 * max(std_exact.values())
 strip(ax, first_chunk, (A_true - half1, A_true + half1))
 panel_title(fig, [ax], "① 一次估计：六种 λ 都铺得很开，看不出谁偏")
 panel_note(fig, [ax], f"每个点是一次估计（每行 {N_DOTS} 个）；黑竖线是这一行的平均，黑虚线是真值 {m(A_true, 4)}，\n"
                       "点线是 0。这么吵，六条平均线挤在一起，看不出谁偏。")
-ax = fig.add_axes([0.14, 0.40, 0.82, 0.20])
+ax = fig.add_axes([0.14, 0.085, 0.82, 0.30])
 data_axes(ax, f"{N_AVG} 次估计的平均", "")
 lo2 = min(min(np.percentile(g, 0.5) for g in group_means.values()), A_true)
 hi2 = max(max(np.percentile(g, 99.5) for g in group_means.values()), 0.0)
@@ -619,7 +624,14 @@ strip(ax, group_means, (lo2 - pad, hi2 + pad))
 panel_title(fig, [ax], f"② {N_AVG} 次估计取一次平均：吵声小了 √{N_AVG} ≈ 31.6 倍，偏差一点没少")
 panel_note(fig, [ax], f"每个点是 {N_AVG} 次估计的平均。偏差露出来了：λ = 0 整团在 0 的右边，平均起来说“大步更好”，\n"
                       "方向都反了；λ = 1 正对真值，却散得最开；λ = 0.95 偏一点、窄一些。")
-ax = fig.add_axes([0.14, 0.085, 0.82, 0.20])
+savefig(fig, "ch12_bias_variance")
+plt.close(fig)
+
+# ---------------------------------------------------------------------------
+banner("5c. 画图：figures/ch12_best_lambda.png（两条错合起来有最低点；最低点随“平均几次”挪）")
+fig = plt.figure(figsize=(10.6, 11.6))
+fig.suptitle("最好的 λ 没有定数：跟着“平均几次”挪", fontsize=FS_TITLE, fontweight="bold", color=INK, y=0.985)
+ax = fig.add_axes([0.14, 0.555, 0.82, 0.30])
 data_axes(ax, "λ", "离真值多远")
 lam_grid = np.linspace(0, 1, 101)
 bias_curve = [abs(gae(mu_big, V_critic, V_WALK, np.zeros(T24), GAMMA, x)[0][0] - A_true) for x in lam_grid]
@@ -635,10 +647,36 @@ ax.annotate(f"最低点 λ = {num(b, 2)}", (b, total_error(b, N_AVG)), xytext=(b
 ax.set_xlim(0, 1.02)
 ax.set_ylim(0, max(max(tot_curve), max(bias_curve)) * 1.12)
 ax.legend(loc="center left", fontsize=14, frameon=False, bbox_to_anchor=(0.0, 0.52))
-panel_title(fig, [ax], f"③ 平均 {N_AVG} 次之后：偏差往下走，吵声往上走，合起来有个最低点")
-panel_note(fig, [ax], f"最低点的位置随“平均几次”挪：只看 1 次时是 λ = {num(best[1], 2)}，100 次时 {num(best[100], 2)}，"
-                      f"10000 次时 {num(best[10000], 2)}。")
-savefig(fig, "ch12_bias_variance")
+panel_title(fig, [ax], f"① 平均 {N_AVG} 次之后：偏差往下走，吵声往上走，合起来有个最低点")
+panel_note(fig, [ax], f"橙线是偏差（多抽也不变），蓝线是吵声被平均掉之后剩下的，黑线是两者合起来。\n"
+                      f"两头都不好：λ = 0 偏得最多，λ = 1 吵得最多，最低点落在 λ = {num(best[N_AVG], 2)}。")
+ax = fig.add_axes([0.14, 0.085, 0.82, 0.30])
+data_axes(ax, "λ", "离真值多远（对数刻度）")
+ax.set_yscale("log")
+#           颜色、记号、标签放哪（x、y 的倍数、左右、上下）——四个标签手工错开，免得叠在一起
+n_style = {1: (BLUE, "s", 0.05, 1.6, "left", "bottom"), 100: (FAINT, "^", 0.75, 1.5, "right", "bottom"),
+           N_AVG: (INK, "o", 0.86, 0.50, "right", "top"), 10000: (GREEN, "D", 1.01, 0.62, "right", "top")}
+all_err = []
+for n_avg, (col, mk, tx, ty, ha, va) in n_style.items():
+    curve_n = [total_error(x, n_avg) for x in lam_grid]
+    all_err += curve_n
+    ax.plot(lam_grid, curve_n, color=col, lw=3.0, label=f"平均 {n_avg:,} 次")
+    b_n, y_n = best[n_avg], total_error(best[n_avg], n_avg)
+    ax.plot([b_n], [y_n], mk, color=col, ms=11, zorder=6)
+    ax.annotate(f"λ = {num(b_n, 2)}", (b_n, y_n), xytext=(tx, y_n * ty), fontsize=15, color=col,
+                ha=ha, va=va, bbox=WHITE_BOX, zorder=7)
+ax.set_xlim(0, 1.02)
+ax.set_ylim(min(all_err) * 0.38, max(all_err) * 1.4)
+ax.set_yticks([t for t in (0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2) if min(all_err) * 0.38 <= t <= max(all_err) * 1.4])
+ax.set_yticklabels([num(t) for t in ax.get_yticks()])
+ax.minorticks_off()
+ax.legend(loc="lower left", fontsize=14, frameon=False)
+panel_title(fig, [ax], "② 换一个“平均几次”，最低点就挪一次："
+                       + " → ".join(num(best[n_avg], 2) for n_avg in (1, 100, N_AVG, 10000)))
+panel_note(fig, [ax], "纵轴是对数刻度（第 3 章 3.5 节用过）：按倍数等距——0.01 到 0.02 和 1 到 2 占同样的高度。\n"
+                      "只平均 1 次时吵声是大头，宁可偏一点也要安静（最低点在 λ = 0）；平均的次数越多，\n"
+                      "吵声越被平均掉，最低点就越往 1 挪。这张图说的是“为什么会挪”，不是“项目该取多少”。")
+savefig(fig, "ch12_best_lambda")
 plt.close(fig)
 
 # ---------------------------------------------------------------------------
@@ -779,6 +817,8 @@ if cfg_path.is_file():
     check("项目：γ = 0.99、λ = 0.95、每只机器人攒 24 步", at >= 0 and lines_in_order(cfg_text[at:], CFG_LINES))
     check("项目没有打开“每个 mini-batch 各自归一化优势”", "normalize_advantage_per_mini_batch" not in cfg_text)
     check("项目：熵奖励系数 c = 0.01（12.7 节说的损失里的另一项）", lines_in_order(cfg_text[at:], ["entropy_coef=0.01,", "gamma=0.99,"]))
+    check("12.6 节那张表：项目自己加的终止 nan_state（数值出错）不是超时——time_out=False",
+          lines_in_order(cfg_text, ['cfg.terminations["nan_state"] = TerminationTermCfg(', "time_out=False,"]))
 else:
     print("  （没找到项目的 env cfg，跳过这一项）")
 patch_path = REPO / "src" / "mjlab_microduck" / "tasks" / "mdp.py"
@@ -854,6 +894,14 @@ if mj_root and (mj_root / "rl" / "vecenv_wrapper.py").is_file():
     check("mjlab 每一步都把 time_outs 放进 extras：is_finite_horizon 默认 False，项目没改它",
           "if not self.cfg.is_finite_horizon:" in wrap_text and "is_finite_horizon: bool = False" in env_text
           and not proj_sets_horizon)
+    vel_text = (mj_root / "tasks" / "velocity" / "velocity_env_cfg.py").read_text(encoding="utf-8")
+    check("12.6 节那张表：项目照搬的 mjlab 走路模板里，到点（time_out）和走出地形边界（out_of_terrain_bounds）算超时，"
+          "摔倒（fell_over，倾斜超过 70°）不算",
+          lines_in_order(vel_text, ['"time_out": TerminationTermCfg(func=mdp.time_out, time_out=True),',
+                                    '"fell_over": TerminationTermCfg(',
+                                    'params={"limit_angle": math.radians(70.0)},',
+                                    '"out_of_terrain_bounds": TerminationTermCfg(',
+                                    "time_out=True,"]))
     mjcfg_text = (mj_root / "rl" / "config.py").read_text(encoding="utf-8")
     check("mjlab：dones = 终止或超时；超时另记在 time_outs 里；mjlab 的默认 λ 也是 0.95",
           lines_in_order(wrap_text, ["term_or_trunc = terminated | truncated", "dones = term_or_trunc.to(dtype=torch.long)",

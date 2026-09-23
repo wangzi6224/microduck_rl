@@ -1,12 +1,13 @@
 """第 11 章实验：策略梯度。两个键的游戏机、对数导数技巧、钟的中心怎么挪、基线、REINFORCE、熵奖励。
 
 运行：uv run python docs/learn-zh/labs/ch11_reinforce.py
-纯 CPU，numpy + torch + matplotlib，十几秒。第 7 节只读四份源码的文字，不加载机器人、不训练。
+纯 CPU，numpy + torch + matplotlib，半分钟上下。第 7 节只读四份源码的文字，不加载机器人、不训练。
 小节编号与正文一一对应：实验第 K 节 = 正文 11.K 节（第 7 节对应「映射到项目」）。
 正文“改一改”要改的三行都带 `# TWEAK-k:` 标记（第 1、4、6 节各一处）。
 
 第 5、6 节的“推小车”：观测 s ∈ (−1, 1) 是小车离目标的位置，动作 a 是把小车推多远，推完小车到 s + a，
 奖励 r = −(s + a)²，最优动作是 a = −s。一局只有一步（推一次就结束）。
+第 6 节还有一台“两座山的老虎机”：没有观测，动作 a 的分数是两座钟形的山——小山在 a = 0 值 1 分，大山在 a = 1.5 值 2 分。
 """
 
 import importlib.util
@@ -367,6 +368,21 @@ check("基线 2 正是平均分 V；优势 +1、−1，按策略加权平均为 
       math.isclose(V_game, 2) and math.isclose(adv_blue, 1) and math.isclose(adv_green, -1)
       and math.isclose(P0 * adv_blue + (1 - P0) * adv_green, 0, abs_tol=1e-12))
 check("一次 64 个样本：不减基线的估计一般离 2 差 4/√64 = 0.5；减了基线差 0", math.isclose(std_plain / 8, 0.5))
+# p = 0.5 的游戏机：两种样本贡献都离平均 2|2 − b|——基线离平均分多远，抖动就有多大
+spread = lambda b: 2 * abs(2 - b)
+print("离平均多远 = 2 × |2 − b|：" + "，".join(f"b = {fmt(b)} → {fmt(round(spread(b), 10))}" for b in (0.0, 1.0, B, 3.0, 100.0)))
+check("抖动的规律 2|2 − b|：b = 0 → 4，b = 1 → 2，b = 2 → 0，b = 3 → 2，b = 100 → 196（和逐个算出来的一致）",
+      all(math.isclose(spread(b), math.sqrt(P0 * (blue_share(P0, b) - 2) ** 2 + (1 - P0) * (green_share(P0, b) - 2) ** 2))
+          for b in (0.0, 1.0, B, 3.0, 100.0))
+      and [spread(b) for b in (0.0, 1.0, B, 3.0, 100.0)] == [4, 2, 0, 2, 196])
+check("自测（11.5 节）：两个键的分数都加 100、不减基线——蓝键 (1/0.5) × 103 = 206，绿键 (−1/0.5) × 101 = −202，"
+      "平均 0.5 × 206 + 0.5 × (−202) = 2 还是斜率；离平均 204 = 2 × |102 − 0|，平均分 102",
+      math.isclose((1 / P0) * 103, 206) and math.isclose((-1 / (1 - P0)) * 101, -202)
+      and math.isclose(P0 * 206 + (1 - P0) * -202, slope) and math.isclose(206 - 2, 204) and math.isclose(-202 - 2, -204)
+      and math.isclose(P0 * 103 + (1 - P0) * 101, 102) and math.isclose(2 * abs(102 - 0), 204))
+check("字面值：b = 100 时蓝键记 2 × (3 − 100) = −194、绿键记 (−2) × (1 − 100) = 198，都离平均 2 有 196",
+      math.isclose(blue_share(P0, 100), -194) and math.isclose(green_share(P0, 100), 198)
+      and math.isclose(-194 - 2, -196) and math.isclose(198 - 2, 196))
 check("自测 p = 0.8、b = 2：1.25 和 5，平均 0.8 × 1.25 + 0.2 × 5 = 2",
       math.isclose(blue_share(0.8, 2), 1.25) and math.isclose(green_share(0.8, 2), 5)
       and math.isclose(0.8 * 1.25 + 0.2 * 5, 2) and math.isclose(average_share(0.8, 2), 2))
@@ -513,8 +529,12 @@ SNAP_ROUNDS = (0, 50, 200, 1500)
 S_GRID = torch.linspace(-1, 1, 101).unsqueeze(1)
 
 
-def reinforce(c, rounds, seed=0):
-    """推小车的 REINFORCE。c 是 11.6 节的熵奖励系数（第 5 节 c = 0）。每一轮：抽 256 个、更新一次。"""
+def reinforce(c, rounds, seed=0, baseline=True, offset=0.0):
+    """推小车的 REINFORCE。c 是 11.6 节的熵奖励系数（第 5 节 c = 0）。每一轮：抽 256 个、更新一次。
+
+    baseline=False：不减基线，权重直接用分数本身。
+    offset：给每一局的分数都加同一个数（哪个动作更好完全没变；记录下来的 reward 已经把它减回去）。
+    """
     torch.manual_seed(seed)
     net = torch.nn.Sequential(torch.nn.Linear(1, 16), torch.nn.ELU(), torch.nn.Linear(16, 1))   # μ_θ(s)：1 → 16 → 1
     log_std = torch.nn.Parameter(torch.zeros(1))                                                  # σ = exp(log_std)，起点 1
@@ -533,12 +553,14 @@ def reinforce(c, rounds, seed=0):
         dist = torch.distributions.Normal(mu, std)     # 256 口钟：中心 μ_θ(s)，宽度 σ
         a = dist.sample()                              # 每口钟抽一个动作（抽样不带梯度）
         r = -((s + a) ** 2).squeeze(1)                 # 推完的位置 s + a，离目标越远扣得越多
+        r = r + offset                                 # 对照实验用：给每一局的分数都加同一个常数（默认 0，不起作用）
         logp = dist.log_prob(a).squeeze(1)             # ln π(a|s)
         adv = r - r.mean()                             # 减基线：用这一批的平均分
+        adv = adv if baseline else r                   # 对照实验用：不减基线时，权重直接用分数本身
         loss = -(adv.detach() * logp).mean()           # 权重 × ln π，取平均，再取负号
         loss = loss - c * dist.entropy().mean()        # 11.6 节的熵奖励（c = 0 时这一行不起作用）
         opt.zero_grad(); loss.backward(); opt.step()
-        hist["reward"].append(r.mean().item())
+        hist["reward"].append(r.mean().item() - offset)   # 记录时把加上去的常数减回去，三条曲线才比得了
     hist["net"] = net
     return hist
 
@@ -565,6 +587,33 @@ check("正文 11.5、11.6 节贴的代码行，原样在本实验的 reinforce()
 src_reinforce = Path(__file__).read_text(encoding="utf-8").split("def reinforce(", 1)[1].split("\nROUNDS_LONG", 1)[0]
 check("推小车的设置：μ_θ(s) 是 1 → 16 → 1 的小网络，每一轮 256 辆车",
       "torch.nn.Linear(1, 16), torch.nn.ELU(), torch.nn.Linear(16, 1)" in src_reinforce and "torch.rand(256, 1)" in src_reinforce)
+
+# 把基线拿掉：同一个任务，分数整体加 100（哪个动作更好完全没变），看训练曲线差多少
+OFFSET = 100.0
+SEEDS_BL = (0, 1, 2)
+MARKS_BL = (200, 500, 1500)
+CONFIGS = (("减基线", True, 0.0), ("不减基线", False, 0.0),
+           (f"减基线（分数 + {fmt(OFFSET)}）", True, OFFSET), (f"不减基线（分数 + {fmt(OFFSET)}）", False, OFFSET))
+curves_bl = {}
+for label, use_b, off in CONFIGS:
+    curves_bl[label] = np.mean([reinforce(0.0, 1500, seed=sd, baseline=use_b, offset=off)["reward"] for sd in SEEDS_BL], axis=0)
+table(["3 个随机起点平均"] + [f"第 {k} 轮的平均分" for k in MARKS_BL],
+      [[label] + [f(curves_bl[label][k], 3) for k in MARKS_BL] for label, _, _ in CONFIGS])
+base_gap = abs(curves_bl["减基线"][1500] - curves_bl[f"减基线（分数 + {fmt(OFFSET)}）"][1500])
+r0 = curves_bl["减基线"][0]
+print(f"第 0 轮的平均分 {f(r0, 3)}：不减基线等于取 b = 0，离平均分 {abs(r0):.3f}；"
+      f"加 {OFFSET:g} 以后平均分成了 {OFFSET + r0:.3f}，离 b = 0 有 {OFFSET + r0:.3f}——远了 {(OFFSET + r0) / abs(r0):.1f} 倍")
+check("正文引用：第 200 轮 −0.404 / −0.408 / −0.404 / −1.031（3 个随机起点的平均）",
+      [round(curves_bl[label][200], 3) for label, _, _ in CONFIGS] == [-0.404, -0.408, -0.404, -1.031])
+check("正文引用：第 1500 轮 −0.037 / −0.038 / −0.037 / −0.494",
+      [round(curves_bl[label][1500], 3) for label, _, _ in CONFIGS] == [-0.037, -0.038, -0.037, -0.494])
+check("减了基线：加不加 100 分，曲线压在一起（第 1500 轮相差不到 0.002）", base_gap < 0.002)
+check("不减基线：加了 100 分就学不动了（第 1500 轮比减基线差 10 倍以上）",
+      curves_bl[f"不减基线（分数 + {fmt(OFFSET)}）"][1500] < 10 * curves_bl["减基线"][1500])
+check("不减基线、原分数：和减基线几乎一样（第 1500 轮相差不到 0.01）——推小车的分数本来就在 0 附近，底很浅",
+      abs(curves_bl["不减基线"][1500] - curves_bl["减基线"][1500]) < 0.01)
+check("正文引用：3 个起点第 0 轮的平均分是 −1.748；字面值 100 − 1.748 = 98.252，98.252 / 1.748 = 56.2 倍",
+      round(r0, 3) == -1.748 and math.isclose(100 - 1.748, 98.252) and round(98.252 / 1.748, 1) == 56.2)
 
 # ---------------------------------------------------------------------------
 banner("5b. 画图：figures/ch11_reinforce_policy.png（钟的中心学成 −s；平均分一路往上）")
@@ -604,6 +653,34 @@ ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f"{y:g}".replace("-"
 panel_title(fig, [ax], "② 平均分：从 −2.1 一路升到接近 0")
 panel_note(fig, [ax], "分数到不了 0：σ 还在，每一推都带着一点随机，这份代价 11.6 节再算。")
 savefig(fig, "ch11_reinforce_policy")
+plt.close(fig)
+
+# ---------------------------------------------------------------------------
+banner("5c. 画图：figures/ch11_baseline_training.png（给每一局都加 100 分：减了基线的毫无变化，不减的学不动）")
+fig = plt.figure(figsize=(9.6, 7.6))
+fig.suptitle("同一个任务，分数整体加 100：减了基线，照学不误", fontsize=FS_TITLE, fontweight="bold", color=INK, y=0.975)
+ax = fig.add_axes([0.135, 0.175, 0.825, 0.60])
+data_axes(ax, "第几轮", "这一轮的平均分")
+plot_specs = (("减基线", BLUE, 5.0, "-"), ("减基线（分数 + 100）", GREEN, 2.6, (0, (6, 4))),
+              ("不减基线", INK, 1.6, (0, (1, 3))), ("不减基线（分数 + 100）", ORANGE, 3.0, "-"))
+for label, color, lw, ls in plot_specs:
+    key = label.replace("100", fmt(OFFSET))
+    ax.plot(np.arange(1501), curves_bl[key], color=color, lw=lw, ls=ls, zorder=4, label=label)
+ax.set_xlim(-30, 1530)
+ax.set_ylim(-2.3, 0.35)
+ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f"{y:g}".replace("-", "−")))
+ax.legend(loc="lower right", fontsize=FS_SMALL, frameon=False, labelcolor="linecolor", handlelength=2.6,
+          borderaxespad=1.2, labelspacing=0.5)
+key_bad = f"不减基线（分数 + {fmt(OFFSET)}）"
+ax.annotate(f"停在 {f(curves_bl[key_bad][1500], 3)}", xy=(1500, curves_bl[key_bad][1500]), xytext=(1180, -1.05),
+            color=ORANGE, fontsize=FS_SMALL, ha="center", va="center", zorder=7,
+            arrowprops=dict(arrowstyle="-|>", color=ORANGE, lw=1.8, shrinkA=2, shrinkB=4))
+ax.annotate(f"另外三条压在一起，都到 {f(curves_bl['减基线'][1500], 3)}", xy=(1420, curves_bl["减基线"][1420]),
+            xytext=(1050, 0.18), color=INK, fontsize=FS_SMALL, ha="center", va="center", zorder=7, bbox=WHITE_BOX,
+            arrowprops=dict(arrowstyle="-|>", color=INK, lw=1.8, shrinkA=2, shrinkB=4))
+panel_title(fig, [ax], "推小车练 1500 轮，每条曲线是 3 个随机起点的平均")
+panel_note(fig, [ax], "加 100 分不改变哪个动作更好，可它把“分数的底”从 1.7 抬到了 98——\n不减基线的那一条被噪声淹没，减了基线的一点没变。")
+savefig(fig, "ch11_baseline_training")
 plt.close(fig)
 
 # ---------------------------------------------------------------------------
@@ -671,6 +748,81 @@ check("字面值：第 1500 轮 σ = 0.19，0.19² = 0.0361 ≈ 0.036，和平�
 check("推小车的平均分最多到 −σ²：最后 500 轮的平均分和 −σ² 相差不到 0.01（三条都是）",
       all(abs(np.mean(run["reward"][-500:]) + run["sigma"][ROUNDS_LONG] ** 2) < 0.01 for _, run in runs))
 
+# 两座山的老虎机：小山在 a = 0（1 分），大山在 a = 1.5（2 分），两座山都是 0.25 宽；起点 μ = 0、σ = 0.5
+PEAK_A, PEAK_W, PEAK_BIG = 1.5, 0.25, 2.0
+SIG0 = 0.5
+
+
+def hill_reward(a):
+    """两座山：小山在 0（高 1），大山在 1.5（高 2）。都是 0.25 宽的钟形（第 1 章 1.9 节的钟形打分）。"""
+    return torch.exp(-a ** 2 / (2 * PEAK_W ** 2)) + PEAK_BIG * torch.exp(-(a - PEAK_A) ** 2 / (2 * PEAK_W ** 2))
+
+
+def bandit(c, rounds=3000, seed=0):
+    """一个旋钮的老虎机：没有观测，策略就是一口钟（中心 μ、宽度 σ），每一轮抽 256 个动作、更新一次。"""
+    torch.manual_seed(seed)
+    mu = torch.nn.Parameter(torch.tensor([0.0]))
+    log_std = torch.nn.Parameter(torch.tensor([math.log(SIG0)]))
+    opt = torch.optim.Adam([mu, log_std], lr=3e-3)
+    h = {"mu": [], "sigma": [], "reward": []}
+    for _ in range(rounds + 1):
+        std = log_std.exp()
+        dist = torch.distributions.Normal(mu.expand(256), std.expand(256))
+        a = dist.sample()
+        r = hill_reward(a)
+        adv = r - r.mean()                                          # 还是 11.4 节的基线：这一批的平均分
+        loss = -(adv.detach() * dist.log_prob(a)).mean() - c * dist.entropy().mean()
+        h["mu"].append(mu.item()); h["sigma"].append(std.item()); h["reward"].append(r.mean().item())
+        opt.zero_grad(); loss.backward(); opt.step()
+    return {k: np.array(v) for k, v in h.items()}
+
+
+HILL_CS = (0.0, 0.3, 0.5)
+hills = {c: bandit(c) for c in HILL_CS}
+table(["熵系数 c", "第 300 轮的 σ", "第 3000 轮的 σ", "第 3000 轮的 μ", "最后 300 轮平均分", "落在哪座山"],
+      [[fmt(c), f(hills[c]["sigma"][300], 3), f(hills[c]["sigma"][3000], 3), f(hills[c]["mu"][3000], 2),
+        f(float(np.mean(hills[c]["reward"][-300:])), 3),
+        "小山（1 分）" if abs(hills[c]["mu"][3000]) < 0.5 else ("大山（2 分）" if hills[c]["sigma"][3000] < 1 else "哪座也没停住")]
+       for c in HILL_CS])
+dens_far = {s: math.exp(-PEAK_A ** 2 / (2 * s ** 2)) / (s * math.sqrt(2 * math.pi)) for s in (0.5, 0.1)}
+hit = {s: 0.5 * (math.erfc((PEAK_A - PEAK_W) / (s * math.sqrt(2))) - math.erfc((PEAK_A + PEAK_W) / (s * math.sqrt(2)))) for s in (0.5, 0.1)}
+print(f"中心还在 0 时，a = {PEAK_A:g} 处的密度：σ = 0.5 → {dens_far[0.5]:.5f}；σ = 0.1 → {dens_far[0.1]:.3g}")
+print(f"一轮 256 个样本里，落在大山上（1.25 ≤ a ≤ 1.75）的平均个数：σ = 0.5 → {256 * hit[0.5]:.2f}；σ = 0.1 → {256 * hit[0.1]:.1e}")
+check("c = 0：σ 缩到 0.022，μ 一直在 0（卡在小山），平均分 1.00",
+      round(hills[0.0]["sigma"][3000], 3) == 0.022 and abs(hills[0.0]["mu"][3000]) < 0.1
+      and round(float(np.mean(hills[0.0]["reward"][-300:])), 2) == 1.00)
+check("c = 0.3：σ 先被顶到 1.025（第 300 轮），μ 挪到 1.50（大山），σ 再收到 0.112，平均分 1.827",
+      round(hills[0.3]["sigma"][300], 3) == 1.025 and round(hills[0.3]["mu"][3000], 2) == 1.50
+      and round(hills[0.3]["sigma"][3000], 3) == 0.112 and round(float(np.mean(hills[0.3]["reward"][-300:])), 3) == 1.827)
+check("c = 0.5：σ 一直往上涨（第 3000 轮 6946），μ 停在 1.02 两山之间，平均分 0.000——一直乱试，定不下来",
+      round(hills[0.5]["sigma"][3000], 0) == 6946 and hills[0.5]["sigma"][3000] > hills[0.5]["sigma"][1000]
+      and round(hills[0.5]["mu"][3000], 2) == 1.02 and round(float(np.mean(hills[0.5]["reward"][-300:])), 3) == 0.000)
+check("三条都从 σ = 0.5、μ = 0 起步（小山的山顶）", all(h["sigma"][0] == SIG0 and h["mu"][0] == 0.0 for h in hills.values()))
+check("正文表里的六个数：第 300 轮的 σ 是 0.191 / 1.025 / 1.132；第 3000 轮的 μ 是 0.00 / 1.50 / 1.02",
+      [round(hills[c]["sigma"][300], 3) for c in HILL_CS] == [0.191, 1.025, 1.132]
+      and [round(hills[c]["mu"][3000], 2) for c in HILL_CS] == [0.0, 1.50, 1.02])
+check("正文表里的平均分：0.996 / 1.827 / 0.000",
+      [round(float(np.mean(hills[c]["reward"][-300:])), 3) for c in HILL_CS] == [0.996, 1.827, 0.000])
+check("字面值：σ 缩到 0.022 之后，大山 1.5 在 1.5 / 0.022 = 68 个 σ 之外", round(1.5 / 0.022) == 68)
+check("推小车里熵奖励纯属成本：c = 0 最后 500 轮 −0.013，c = 0.1 掉到 −0.051",
+      round(float(np.mean(run0["reward"][-500:])), 3) == -0.013 and round(float(np.mean(run_big["reward"][-500:])), 3) == -0.051)
+check("字面值：a = 1.5 处的密度，σ = 0.5 时 exp(−4.5)/(0.5 × 2.5066) = 0.00886；σ = 0.1 时 exp(−112.5)/(0.1 × 2.5066) = 5.5e−49",
+      round(dens_far[0.5], 5) == 0.00886 and float(f"{dens_far[0.1]:.1e}") == 5.5e-49
+      and round(math.exp(-4.5) / (0.5 * 2.5066), 5) == 0.00886 and round(1.5 ** 2 / (2 * 0.5 ** 2), 1) == 4.5
+      and round(1.5 ** 2 / (2 * 0.1 ** 2), 1) == 112.5)
+check("σ = 0.5 时一轮 256 个里平均有 1.53 个落在大山上；σ = 0.1 时是 9.6e−34 个（等于永远抽不到）",
+      round(256 * hit[0.5], 2) == 1.53 and float(f"{256 * hit[0.1]:.1e}") == 9.6e-34)
+print(f"两个密度之比：{dens_far[0.5]:.5f} / {dens_far[0.1]:.3g} = {dens_far[0.5] / dens_far[0.1]:.1e}")
+check("正文引用：c = 0 的钟练到第 600 轮左右 σ 就到 0.1 附近（实测 %.3f）" % hills[0.0]["sigma"][600],
+      abs(hills[0.0]["sigma"][600] - 0.1) < 0.012)
+check("字面值：两个密度差 0.00886 / (5.5e−49) = 1.6e46 倍（直接算出来也是 1.6e46）",
+      float(f"{0.00886 / 5.5e-49:.1e}") == 1.6e46 and float(f"{dens_far[0.5] / dens_far[0.1]:.1e}") == 1.6e46)
+near = 0.5 * (math.erfc((0.5 - PEAK_W) / (SIG0 * math.sqrt(2))) - math.erfc((0.5 + PEAK_W) / (SIG0 * math.sqrt(2))))
+print(f"自测：大山挪到 a = 0.5（1 个 σ）时，一轮 256 个里平均有 {256 * near:.0f} 个落在 0.25 到 0.75 之间，"
+      f"是原来 {256 * hit[0.5]:.2f} 个的 {near / hit[0.5]:.0f} 倍")
+check("自测：大山挪到 a = 0.5 就在 1 个 σ 处（0.5 / 0.5 = 1），256 个里约 62 个落在它那一带，是原来的 40 倍",
+      math.isclose(0.5 / SIG0, 1.0) and round(256 * near) == 62 and round(near / hit[0.5]) == 40)
+
 # ---------------------------------------------------------------------------
 banner("6b. 画图：figures/ch11_entropy_sigma.png（σ 停在两股力相等的地方）")
 fig = plt.figure(figsize=(9.6, 12.8))
@@ -713,6 +865,68 @@ ax.set_ylim(0, 2.1)
 panel_title(fig, [ax], "② 两股力：推小车的分数把 σ 往小拉，熵奖励往大推")
 panel_note(fig, [ax], "交点就是 σ 停下的地方：2σ = c/σ，σ = √(c/2)。c 越大，停得越宽。")
 savefig(fig, "ch11_entropy_sigma")
+plt.close(fig)
+
+# ---------------------------------------------------------------------------
+banner("6c. 画图：figures/ch11_entropy_escape.png（两座山：c = 0 卡在小山，c = 0.3 翻过去，c = 0.5 定不下来）")
+fig = plt.figure(figsize=(9.6, 14.6))
+fig.suptitle("熵奖励买的是什么：钟缩得太快，就再也找不到那座大山", fontsize=FS_TITLE - 1, fontweight="bold", color=INK, y=0.988)
+HILL_STYLE = {0.0: (INK, "c = 0"), 0.3: (ORANGE, "c = 0.3"), 0.5: ("#7f95a8", "c = 0.5")}
+sig_end0 = hills[0.0]["sigma"][3000]
+
+ax = fig.add_axes([0.15, 0.700, 0.80, 0.225])
+data_axes(ax, "动作 a", "分数")
+aa = np.linspace(-1.2, 2.6, 400)
+ax.plot(aa, np.exp(-aa ** 2 / (2 * PEAK_W ** 2)) + PEAK_BIG * np.exp(-(aa - PEAK_A) ** 2 / (2 * PEAK_W ** 2)),
+        color=GREEN, lw=3, zorder=5)
+ax.text(0.0, 1.06, "小山：1 分", color=GREEN, fontsize=FS_SMALL, ha="center", va="bottom", bbox=WHITE_BOX, zorder=7)
+ax.text(PEAK_A, 2.06, "大山：2 分", color=GREEN, fontsize=FS_SMALL, ha="center", va="bottom", bbox=WHITE_BOX, zorder=7)
+ax.plot(aa, np.exp(-aa ** 2 / (2 * SIG0 ** 2)) / (SIG0 * math.sqrt(2 * math.pi)) * 0.5, color=BLUE, lw=2.4, zorder=4)
+ax.text(-1.15, 1.62, "起点的钟：μ = 0、σ = 0.5\n（高度按 0.5 倍画，只看位置和胖瘦，别读纵轴）", color=BLUE, fontsize=FS_SMALL,
+        va="center", linespacing=1.35, zorder=7)
+ax.plot([0, 0], [0, 2.45], color=MUTED, lw=2.0, ls=(0, (5, 3)), zorder=6)
+ax.text(0.06, 2.42, f"c = 0 练完的钟：σ = {sig_end0:.3f}，细成一根线（高度顶出图外）", color=MUTED, fontsize=FS_SMALL,
+        ha="left", va="top", zorder=7)
+ax.annotate("", xy=(PEAK_A, 0.30), xytext=(0, 0.30), zorder=6,
+            arrowprops=dict(arrowstyle="<|-|>", lw=2.2, color=ORANGE, shrinkA=0, shrinkB=0))
+ax.text(PEAK_A / 2 + 0.05, 0.52, f"中心到大山 = 1.5 = 3 个 σ\n256 个里平均 {256 * hit[0.5]:.2f} 个落在大山上",
+        color=ORANGE, fontsize=FS_SMALL, ha="center", va="bottom", linespacing=1.35, bbox=WHITE_BOX, zorder=7)
+ax.set_xlim(-1.2, 2.6)
+ax.set_ylim(0, 2.55)
+ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:g}".replace("-", "−")))
+panel_title(fig, [ax], "① 这台老虎机：小山 1 分，大山 2 分，起点的钟坐在小山上")
+panel_note(fig, [ax], f"σ 一旦缩到 {sig_end0:.3f}，大山就在 1.5 ÷ {sig_end0:.3f} = {PEAK_A / round(sig_end0, 3):.0f} 个 σ 之外——再也抽不到。")
+
+ax = fig.add_axes([0.15, 0.410, 0.80, 0.150])
+data_axes(ax, "", "σ")
+for c in HILL_CS:
+    color, label = HILL_STYLE[c]
+    ax.plot(np.arange(3001), hills[c]["sigma"], color=color, lw=2.8, zorder=4, label=label)
+ax.set_yscale("log")
+ax.set_yticks([0.01, 0.1, 1, 10, 100, 1000, 10000])
+ax.set_yticklabels(["0.01", "0.1", "1", "10", "100", "1000", "10000"])
+ax.set_ylim(0.012, 30000)
+ax.set_xlim(0, 3000)
+ax.legend(loc="upper left", fontsize=FS_SMALL, frameon=False, labelcolor="linecolor", handlelength=1.8, ncol=3,
+          columnspacing=2.4)
+panel_title(fig, [ax], "② σ：c = 0 一路缩到 0.02，c = 0.3 先撑开再收住，c = 0.5 涨到几千")
+panel_note(fig, [ax], "纵轴是对数刻度：往上一格是 10 倍，不是加 10——不这么画，0.02 和 6946 放不进同一幅图。")
+
+ax = fig.add_axes([0.15, 0.105, 0.80, 0.165])
+data_axes(ax, "第几轮", "这一轮的平均分")
+for c in HILL_CS:
+    ax.plot(np.arange(3001), hills[c]["reward"], color=HILL_STYLE[c][0], lw=2.6, zorder=4)
+for y, lab in ((1.0, "小山 1 分"), (2.0, "大山 2 分")):
+    ax.axhline(y, color=GREEN, ls=":", lw=1.8, zorder=3)
+    ax.text(2970, y + 0.05, lab, color=GREEN, fontsize=FS_SMALL, ha="right", va="bottom", bbox=WHITE_BOX, zorder=7)
+ax.text(1700, 1.63, "c = 0.3", color=ORANGE, fontsize=FS_SMALL, va="center", bbox=WHITE_BOX, zorder=7)
+ax.text(1700, 1.12, "c = 0", color=INK, fontsize=FS_SMALL, va="center", bbox=WHITE_BOX, zorder=7)
+ax.text(1700, 0.18, "c = 0.5", color=HILL_STYLE[0.5][0], fontsize=FS_SMALL, va="center", bbox=WHITE_BOX, zorder=7)
+ax.set_xlim(0, 3000)
+ax.set_ylim(-0.12, 2.4)
+panel_title(fig, [ax], "③ 平均分：c = 0 停在 1 分，c = 0.3 爬到 1.83，c = 0.5 一直在 0 附近")
+panel_note(fig, [ax], "c = 0.3 停在 1.83 而不是 2：σ = 0.11 的钟还有一点宽，\n抽到的动作不全在山顶上——这点差价就是“还愿意试”的租金。")
+savefig(fig, "ch11_entropy_escape")
 plt.close(fig)
 
 # ---------------------------------------------------------------------------
