@@ -18,8 +18,9 @@ from matplotlib.patches import FancyArrowPatch
 from matplotlib.ticker import FixedLocator, FuncFormatter, NullLocator
 
 from _common import banner, check, done, lines_in_order, savefig, table
-from _draw import (BLUE, FAINT, FS_NOTE, FS_SMALL, FS_STEP, FS_TICK, FS_TITLE, GREEN, INK, MUTED, ORANGE, WHITE_BOX,
-                   data_axes, hand, lesson_cells, lesson_figure, lesson_panel, note, panel_note, panel_title, plt)
+from _draw import (BLUE, CELL_HOT, FAINT, FS_NOTE, FS_SMALL, FS_STEP, FS_TICK, FS_TITLE, GREEN, INK, MUTED, ORANGE,
+                   WHITE_BOX, arrow, cell, data_axes, hand, lesson_cells, lesson_figure, lesson_panel, note, panel_note,
+                   panel_title, plt)
 
 np.seterr(over="ignore", invalid="ignore")   # “改一改”把学习率调大时数会越滚越大——那正是要看的现象，不用 numpy 再警告
 warnings.filterwarnings("ignore", message="Polyfit may be poorly conditioned")   # 8 个旋钮穿 8 个点，本来就是故意的
@@ -194,7 +195,8 @@ table(["损失的算法", "2 张：损失", "2 张：∂L/∂w", "4 张：损失
       [["加起来", f"{s2:g}", f"{g2:g}", f"{s4:g}", f"{g4:g}"], ["取平均", f"{m2:g}", f"{gm2:g}", f"{m4:g}", f"{gm4:g}"]])
 check("自测：加起来 13 → 26、梯度 −16 → −32（都翻倍）；取平均 6.5 和 −8 不变",
       (s2, g2, s4, g4) == (13.0, -16.0, 26.0, -32.0) and (m2, gm2, m4, gm4) == (6.5, -8.0, 6.5, -8.0))
-check("机器人每轮的数据：4096 只 × 每只 24 步 = 98,304 条记录", 4096 * 24 == 98_304)
+check("机器人每轮的数据：4096 只 × 每只 24 步 = 98,304 条记录，是两张收据的 98,304 ÷ 2 = 49,152 倍",
+      4096 * 24 == 98_304 and 98_304 // 2 == 49_152)
 check("actor 的旋钮：61→512→256→128→14 四层的权重和偏置 197,774 个，再加 14 个 σ = 197,788（第 6 章数给你看）",
       61 * 512 + 512 + 512 * 256 + 256 + 256 * 128 + 128 + 128 * 14 + 14 == 197_774 and 197_774 + 14 == 197_788)
 
@@ -401,6 +403,57 @@ else:
 check("和第 3 章 3.5 节九行表最后一行一致：w = 2.02617、b = 1.00192", round(w50, 5) == 2.02617 and round(b50, 5) == 1.00192)
 
 # ---------------------------------------------------------------------------
+banner("4b. 画图：figures/ch05_autograd.png（torch 记的那本账：顺着算一遍，倒着走回来）")
+BOX = dict(width=2.25, height=1.05, fontsize=FS_SMALL)
+XW, XY, XE, XL = 0.15, 2.55, 5.35, 8.05          # 四列盒子的左边：旋钮、预测、误差、损失
+YMID, YTOP, YBOT = 1.82, 2.48, 1.70              # 中间一行的底边；旋钮两个盒子的中心高度
+
+
+def graph_boxes(ax, with_data=True, dy=0.0):
+    """四个盒子：旋钮 w、b → 预测 ŷ → 误差 e → 损失 L。数字和上面的 check 同源。"""
+    cell(ax, XW, YTOP - 0.31 + dy, f"w = {W0:g}", width=1.55, height=0.62, facecolor=CELL_HOT,
+         edgecolor=ORANGE, fontsize=FS_SMALL)
+    cell(ax, XW, YBOT - 0.31 + dy, f"b = {B0:g}", width=1.55, height=0.62, facecolor=CELL_HOT,
+         edgecolor=ORANGE, fontsize=FS_SMALL)
+    cell(ax, XY, YMID + dy, minus(f"ŷ = w × x + b\n{pred0[0]:g}、{pred0[1]:g}"), **BOX)
+    cell(ax, XE, YMID + dy, minus(f"e = ŷ − y\n{err0[0]:g}、{err0[1]:g}"), **BOX)
+    cell(ax, XL, YMID + dy, f"L = 平均(e²)\n{L0:g}", **BOX)
+    if with_data:
+        cell(ax, XY, 0.60, "x = 1、2", width=2.25, height=0.55, facecolor="white", fontsize=FS_SMALL)
+        cell(ax, XE, 0.60, "y = 3、5", width=2.25, height=0.55, facecolor="white", fontsize=FS_SMALL)
+
+
+fig, axes = lesson_figure(3, "torch 的账本：顺着算一遍损失，倒着走一遍就是梯度", panel_height=3.35)
+ax = axes[0]
+lesson_panel(ax, "① 算损失的时候，torch 一步步记账")
+graph_boxes(ax)
+for start, end in (((1.70, YTOP), (XY, YMID + 0.75)), ((1.70, YBOT), (XY, YMID + 0.32)),
+                   ((XY + 2.25, YMID + 0.52), (XE, YMID + 0.52)), ((XE + 2.25, YMID + 0.52), (XL, YMID + 0.52)),
+                   ((XY + 1.12, 1.15), (XY + 1.12, YMID)), ((XE + 1.12, 1.15), (XE + 1.12, YMID))):
+    arrow(ax, start, end, INK, lw=2.2)
+note(ax, 0.15, 0.30, "旋钮写了 requires_grad=True，所以每一步是谁算出来的都记下来；数据 x、y 不记账。")
+ax = axes[1]
+lesson_panel(ax, minus("② L.backward()：从 L 倒着走回来，一路问“它动一点，L 动多少”"))
+DY = -0.34                                       # ② 这一排整体下移一点，给上下两个梯度标注让出位置
+graph_boxes(ax, with_data=False, dy=DY)
+for start, end in (((XL, YMID + 0.52 + DY), (XE + 2.25, YMID + 0.52 + DY)),
+                   ((XE, YMID + 0.52 + DY), (XY + 2.25, YMID + 0.52 + DY)),
+                   ((XY, YMID + 0.75 + DY), (1.70, YTOP + DY)), ((XY, YMID + 0.32 + DY), (1.70, YBOT + DY))):
+    arrow(ax, start, end, ORANGE, lw=3.0)
+hand(ax, 1.78, 2.92, minus(f"∂L/∂w = {dw0:g} → 存进 w.grad"), color=ORANGE, fontsize=FS_SMALL)
+hand(ax, 1.78, 0.82, minus(f"∂L/∂b = {db0:g} → 存进 b.grad"), color=ORANGE, fontsize=FS_SMALL)
+note(ax, 0.15, 0.24, "和 5.1 节手推的两个偏导数一模一样。数据没记账，橙箭头到旋钮就停。")
+ax = axes[2]
+lesson_panel(ax, "③ 拧旋钮、清零：这两步不记账")
+hand(ax, 0.15, 2.75, minus(f"with torch.no_grad():  w = 1 − 0.1 × ({dw0:g}) = {w1:g}"), color=GREEN, fontsize=FS_SMALL)
+hand(ax, 0.15, 2.05, minus(f"                       b = 0 − 0.1 × ({db0:g}) = {b1:g}"), color=GREEN, fontsize=FS_SMALL)
+hand(ax, 0.15, 1.42, minus(f"w.grad.zero_()、b.grad.zero_()：账上的 {dw0:g}、{db0:g} 清成 0"), fontsize=FS_SMALL)
+note(ax, 0.15, 0.52, minus(f"旋钮变了，L 不会自己重算（还是 {L0:g}）：下一轮从头算一遍损失，\ntorch 也跟着重记一本新账。"),
+     linespacing=1.45)
+savefig(fig, "ch05_autograd")
+plt.close(fig)
+
+# ---------------------------------------------------------------------------
 banner("5. 泛化与过拟合：没见过的数据上准不准")
 X_new = np.array([-1.0, -0.5, 0.0, 0.5, 1.0])      # 50 个点里没有的 x（这批数据没有单位，x 就是一个数）
 pred_new = [f"{w50 * xv + b50:.3f}" for xv in X_new]
@@ -484,6 +537,17 @@ check("这一张的平方误差：曲线 2.27² = 5.1529（约 5.15），直线 
       round(2.27 ** 2, 4) == 5.1529 and round(2.39 - 1.89, 2) == 0.5 and 20 < 5.1529 / 0.25 < 21)
 check(f"理论值：直线的验证损失接近压不掉的随机误差 σ² = {SIGMA ** 2:.2f}（在它的一半到两倍之间）",
       0.5 * SIGMA ** 2 < va_line < 2 * SIGMA ** 2)
+# 5.6 节末尾：验证损失为什么会比训练损失还低——拿藏着的规则给两批收据各打一次分
+truth_tr, truth_va = mean((2 * x_tr + 1 - y_tr) ** 2), mean((2 * x_va + 1 - y_va) ** 2)
+print(f"藏着的规则 y = 2x + 1 的损失：{N_TRAIN} 张训练收据上 {truth_tr:.3f}，40 张验证收据上 {truth_va:.3f}"
+      f"（平均而言该是 σ² = {SIGMA:g} × {SIGMA:g} = {SIGMA ** 2:.2f}）")
+check("藏着的规则在 8 张训练收据上损失 0.184、在 40 张验证收据上 0.069：这 8 张的随机误差抽得偏大，那 40 张偏小",
+      f"{truth_tr:.3f}" == "0.184" and f"{truth_va:.3f}" == "0.069" and round(SIGMA * SIGMA, 2) == 0.09)
+check(f"学出的直线在训练那 {N_TRAIN} 张上比藏着的规则还低（{tr_line:.3f} < {truth_tr:.3f}，迁就了随机误差），"
+      f"在 40 张新收据上反而更差（{va_line:.3f} > {truth_va:.3f}）",
+      tr_line < truth_tr and va_line > truth_va)
+check(f"按字面值重算（控制台把 2.074x + 1.008 换成 2x + 1）：用印出的 8 个车费得 {mean([(2 * xv + 1 - yv) ** 2 for xv, yv in zip(np.linspace(0.5, 4.0, 8), YS_TEXT)]):.4f}——以 0.1837 开头",
+      0.1837 <= mean([(2 * xv + 1 - yv) ** 2 for xv, yv in zip(np.linspace(0.5, 4.0, 8), YS_TEXT)]) < 0.1838)
 
 # ---------------------------------------------------------------------------
 banner("5b. 画图：figures/ch05_overfit.png（穿过每张收据的曲线 vs 直线）")

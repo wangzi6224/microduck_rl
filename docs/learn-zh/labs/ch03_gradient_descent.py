@@ -261,6 +261,9 @@ demo_pred = float(grad @ demo_step)
 demo_real = f(x0 + demo_step[0], y0 + demo_step[1]) - f0
 print(f"  例：Δx = 0.03，Δy = −0.01 → 预测 2 × 0.03 + 12 × (−0.01) = {demo_pred:.4f}，实际 {demo_real:.4f}")
 check("价格表预测 −0.06，实际 −0.0588", math.isclose(demo_pred, -0.06, abs_tol=1e-12) and math.isclose(demo_real, -0.0588, abs_tol=1e-9))
+check("字面值重算：1.0609 + 3 × 3.9601 = 12.9412，减 13 得 −0.0588",
+      round(1.03 ** 2, 4) == 1.0609 and round(1.99 ** 2, 4) == 3.9601
+      and round(1.0609 + 3 * 3.9601, 4) == 12.9412 and round(12.9412 - 13, 4) == -0.0588)
 
 STEP = 0.01
 print(f"\n从 (1, 2) 出发，朝各个方向都走同样长的一步 {STEP}：")

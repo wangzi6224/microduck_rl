@@ -160,6 +160,8 @@ plt.close(fig)
 
 # ---------------------------------------------------------------------------
 banner("2. 反向传播：从 L 出发往回走，每过一台机器乘一次它的本地汇率")
+print(f"先回忆第 1 章 1.7 节的汇率：1 元换 0.14 美元、1 美元换 0.9 欧元 → 1 元换 0.14 × 0.9 = {0.14 * 0.9:.3f} 欧元")
+check("第 1 章 1.7 节的两道汇率相乘：0.14 × 0.9 = 0.126", round(0.14 * 0.9, 6) == 0.126)
 rate_sq, rate_minus, rate_w, rate_b = 2 * e1, 1.0, X1, 1.0   # 平方：2e；减 y：1；乘加：对 w 是 x，对 b 是 1
 g_e = 1.0 * rate_sq            # 从 L 出发：L 对自己的倍数是 1
 g_yh = g_e * rate_minus
@@ -421,6 +423,8 @@ opt.step()
 hand_step = [X_START - ALPHA_ADAM * adam_first_step(g_bowl[0].item())[4], Y_START - ALPHA_ADAM * adam_first_step(g_bowl[1].item())[4]]
 table(["", "x", "y"], [["梯度 g", g_bowl[0].item(), g_bowl[1].item()], ["手算 Adam 一步", hand_step[0], hand_step[1]],
                        ["torch Adam 一步", p[0].item(), p[1].item()]], floatfmt=".4g")
+check(f"同一个 α = {ALPHA_ADAM:g} 交给 SGD：x 跨 0.3 × 6 = {ALPHA_ADAM * 6:g}，y 跨 0.3 × 400 = {ALPHA_ADAM * 400:g}（Adam 两边都只跨 0.3）",
+      round(ALPHA_ADAM * 6, 6) == 1.8 and round(ALPHA_ADAM * 400, 6) == 120)
 check("扁碗第一步：梯度 (2×3, 200×2) = (6, 400)，400 ÷ 6 ≈ 66.7，约 67 倍；Adam 两个方向都走 0.3 → (2.7, 1.7)，手算 = torch",
       g_bowl.tolist() == [6, 400] and round(400 / 6, 1) == 66.7 and round(400 / 6) == 67 and np.allclose(hand_step, [2.7, 1.7])
       and np.allclose(p.detach().numpy(), [2.7, 1.7]))
@@ -468,7 +472,40 @@ sig = inspect.signature(torch.optim.Adam.__init__).parameters
 check("torch.optim.Adam 的默认值：β₁ = 0.9，β₂ = 0.999，ε = 1e-8", sig["betas"].default == (0.9, 0.999) and sig["eps"].default == 1e-8)
 
 # ---------------------------------------------------------------------------
-banner("5b. 画图：figures/ch07_optimizers.png（扁碗上三种走法）")
+banner("5b. 画图：figures/ch07_adam_two_books.png（两本账的第一步：梯度 2 和 400 都走一个 α）")
+
+
+def big(v) -> str:
+    """大数带千分位：160000 → 160,000（和正文一致）。"""
+    return f"{v:,.0f}" if abs(v) >= 10000 else fmt(v)
+
+
+def two_books_column(ax, x0, g, m_, v_, mh_, vh_, color):
+    """一列四步手算：记账 → 起步修正 → √v̂ → 相除。"""
+    rows = [f"m = {fmt(1 - B1, 1)} × {fmt(g)} = {fmt(m_, 3)}　　v = {fmt(1 - B2, 3)} × {fmt(g)}² = {fmt(v_, 3)}",
+            f"起步修正：m̂ = {fmt(m_, 3)} ÷ {fmt(1 - B1, 1)} = {big(mh_)}　　v̂ = {fmt(v_, 3)} ÷ {fmt(1 - B2, 3)} = {big(vh_)}",
+            f"√v̂ = √{big(vh_)} = {big(math.sqrt(vh_))}",
+            f"这一步 = α × m̂ ÷ √v̂ = α × {big(mh_)} ÷ {big(math.sqrt(vh_))} = α"]
+    for j, text in enumerate(rows):
+        hand(ax, x0, 3.25 - 0.82 * j, text, color=color if j == len(rows) - 1 else INK, fontsize=FS_SMALL + 1)
+
+
+fig, axes = lesson_stack([3.2, 4.5, 4.5], "Adam 的两本账：梯度差 200 倍，第一步都走一个 α")
+lesson_panel(axes[0], "① 两本账各记什么（都是 7.4 节的滑动平均，今天占 1 − β）", xmax=XMAX, ymax=3.2)
+hand(axes[0], 0.3, 2.0, f"m：梯度 g 的滑动平均，旧账占 β₁ = {B1:g} → 管方向（正负号）", color=BLUE, fontsize=FS_SMALL + 1)
+hand(axes[0], 0.3, 1.3, f"v：梯度平方 g² 的滑动平均，旧账占 β₂ = {B2:g} → 管“一向多大”（不分正负）", color=GREEN, fontsize=FS_SMALL + 1)
+note(axes[0], 0.3, 0.5, "两本账都从 0 起步，所以第一步都要做起步修正（7.4 节）。")
+lesson_panel(axes[1], f"② 第一步，梯度 g = {fmt(2.0)}", xmax=XMAX, ymax=4.5)
+two_books_column(axes[1], 0.3, 2.0, m, v, m_hat, v_hat, ORANGE)
+note(axes[1], 0.3, 0.22, f"不修正的话，这一步会是 {fmt(m / math.sqrt(v), 3)} α——大了三倍多。")
+lesson_panel(axes[2], f"③ 同一个第一步，梯度 g = {fmt(400.0)}（大了 {fmt(400 / 2)} 倍）", xmax=XMAX, ymax=4.5)
+two_books_column(axes[2], 0.3, 400.0, m4, v4, mh4, vh4, ORANGE)
+note(axes[2], 0.3, 0.22, "②③ 最后一行一样：第一步走多远，和梯度多大没关系。")
+savefig(fig, "ch07_adam_two_books")
+plt.close(fig)
+
+# ---------------------------------------------------------------------------
+banner("5c. 画图：figures/ch07_optimizers.png（扁碗上三种走法）")
 fig = plt.figure(figsize=(10.6, 15.6))
 gs = fig.add_gridspec(3, 2, width_ratios=[1.0, 0.95], hspace=0.62, wspace=0.05, left=0.09, right=0.99, top=0.915, bottom=0.07)
 fig.suptitle("扁碗 x² + 100y²：SGD 要么飞、要么慢；Adam 每个方向自己定步长", fontsize=FS_TITLE, fontweight="bold", color=INK, y=0.985)
@@ -547,7 +584,8 @@ ENVS, STEPS, MB, EP = 4096, 24, 4, 5
 rec = ENVS * STEPS
 check("项目：4096 × 24 = 98,304 条；÷ 4 = 24,576 条一份；4 份 × 5 遍 = 20 次更新",
       rec == 98304 and rec // MB == 24576 and MB * EP == 20)
-check("7.6 自测：切 8 份 → 98,304 ÷ 8 = 12,288 条一份，8 × 5 = 40 次更新", rec // 8 == 12288 and 8 * EP == 40)
+check("7.6 自测：只切 1 份 → 每次更新用全部 98,304 条（24,576 的 4 倍），1 × 5 = 5 次更新（遍数没变，更新次数少了 4 倍）",
+      rec // 1 == 98304 and rec // 1 == 4 * (rec // MB) and 1 * EP == 5 and MB * EP // (1 * EP) == 4)
 
 # ---------------------------------------------------------------------------
 banner("6b. 画图：figures/ch07_minibatch.png（洗牌 → 切份 → 轮 3 遍 → 项目规模）")

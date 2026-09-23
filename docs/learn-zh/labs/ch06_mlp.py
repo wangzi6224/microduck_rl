@@ -69,6 +69,12 @@ check("表里 ELU 的四个负数：−0.950、−0.865、−0.632、−0.393",
 check("手写的 ELU = torch.nn.ELU()（项目用的那道门）",
       np.allclose(elu(Z_TABLE), torch.nn.ELU()(torch.tensor(Z_TABLE)).numpy(), atol=1e-6))
 check("手写的 ReLU = torch.nn.ReLU()", np.allclose(relu(np.array(Z_TABLE)), torch.nn.ReLU()(torch.tensor(Z_TABLE)).numpy()))
+print(f"两道门对负数的不同处理：ReLU(−0.1) = {u(float(relu(-0.1)))}，ReLU(−5) = {u(float(relu(-5.0)))}（都是同一个 0）；"
+      f"ELU(−0.1) = {u(float(elu(-0.1)))}，ELU(−5) = {u(float(elu(-5.0)))}（还分得出大小）")
+check("ReLU 把 −0.1 和 −5 压成同一个 0；ELU 压成 −0.0952 和 −0.9933，大小关系还在",
+      float(relu(-0.1)) == float(relu(-5.0)) == 0.0
+      and round(float(elu(-0.1)), 4) == -0.0952 and round(float(elu(-5.0)), 4) == -0.9933
+      and float(elu(-0.1)) > float(elu(-5.0)))
 print(f"ELU(−10) = {u(float(elu(-10.0)), 5)}（控制台 Math.exp(-10) - 1 → {math.exp(-10) - 1!r}）")
 check("ELU 越往左越贴近 −1，但到不了：z = −10 时是 −0.99995", round(float(elu(-10.0)), 5) == -0.99995 and float(elu(-10.0)) > -1)
 
@@ -525,6 +531,8 @@ if rsl_dir and (rsl_dir / "modules" / "mlp.py").is_file():
     mlp_text = (rsl_dir / "modules" / "mlp.py").read_text(encoding="utf-8")
     print("rsl_rl/modules/mlp.py 的 MLP：第 1 张表 + 门 → 循环加中间的表 + 门 → 最后一张表（不接门）→ forward 依次过")
     check(f"正文映射块引用的 MLP 源码 {len(MLP_LINES)} 行都原样存在，且顺序一致", lines_in_order(mlp_text, MLP_LINES))
+    check('6.1 节说的“项目照 rsl_rl 的默认配置选了 ELU”：mlp.py 的签名里写着 activation: str = "elu"',
+          'activation: str = "elu",' in mlp_text)
     others = {"utils/utils.py": '"elu": torch.nn.ELU(),',
               "models/mlp_model.py": "self.mlp = MLP(self._get_latent_dim(), mlp_output_dim, hidden_dims, activation)",
               "modules/distribution.py": "self.std_param = nn.Parameter(init_std * torch.ones(output_dim))"}
