@@ -50,6 +50,9 @@ ARCHIVE_OTHER = {  # 存档第 4 节
 }
 ARCHIVE_FILES = ["2026-09-22_13-21-10_learnzh-ch14.onnx", "events.out.tfevents.1790054472.D0100685.2806623.0", "git",
                  "model_0.pt", "model_4.pt", "params"]  # 存档第 5 节列出的产物
+# 存档那次两个产物的字节数（`ls -l` 量出来的）。正文 14.9 节把它们标成"存档那次的值，你的会不同"；
+# 第 9 节用它们和"按配置算出来的"4,818,780 / 791,096 对差，这条核对与本机有没有运行目录无关。
+ARCHIVE_SIZES = {"model_4.pt": 4_842_943, "onnx": 793_706}
 # 同一次运行的事件文件（logs/rsl_rl/velocity/2026-09-22_13-21-10_learnzh-ch14/events.out.tfevents…）：第 0 到第 4 圈，
 # 保留 6 位小数。GPU 实验只打印最后一圈；这几列是 14.1、14.8、14.10 节要用的"前几圈"。
 ARCHIVE_EVENTS = {
@@ -277,6 +280,10 @@ print(f"形状 vs 乘法：一步里 4096 只的观测是形状 [4096, 61]（409
 check("[4096, 61] 里有 4096 × 61 = 249,856 个数，但只有 4096 条记录；[24, 4096, 61] 共 5,996,544 个数",
       4096 * 61 == 249_856 and 24 * 4096 * 61 == 5_996_544)
 check("自测：冒烟一圈 1536 行，actor 观测部分共 1536 × 61 = 93,696 个数", 1536 * 61 == 93_696)
+check("61 / 76 / 14 不是手抄的：配置里 actor 这组 8 块、critic 这组 13 块（多 5 块 = 第 15 章说的 15 项特权观测）；"
+      "这三个数本身由第 9 节的旋钮个数兜住——61 → 512 → 256 → 128 → 14 算出 197,774，76 → … → 1 算出 203,777",
+      len(cfg.observations["actor"].terms) == 8 and len(cfg.observations["critic"].terms) == 13
+      and set(cfg.observations) == {"actor", "critic"})
 
 # ---------------------------------------------------------------------------
 banner("3. 算优势、拧 20 次：记下的数不动，策略在动")
@@ -302,7 +309,7 @@ ax.text(0.3, 12.15, "训练的一圈：采 24 步 → 算优势 → 拧 20 次 �
 STATIONS = [
     ("① 采集（14.2 节）", f"4096 只 × {STEPS} 步 = {rows_real:,} 行", "每行：看到什么、做了什么、得了几分、critic 估多少、结束了没"),
     ("② 算优势（14.3 节）", f"从第 {STEPS} 步往回扫一遍：每行补上优势 Â 和 returns", "第 12 章的 GAE：这一步比 critic 预想的好多少"),
-    ("③ 更新（14.3 节）", f"{ALG.num_learning_epochs} 遍 × {ALG.num_mini_batches} 份 = {UPDATES} 次", "每次：用当前网络重算、算损失、裁剪梯度、Adam 拧一步"),
+    ("③ 更新（14.3 节）", f"{ALG.num_learning_epochs} 遍 × {ALG.num_mini_batches} 份 = {UPDATES} 次", "每次：用当前网络重算、算损失、裁剪梯度、Adam 拧一次旋钮"),
     ("④ 记日志（14.4–14.8 节）", "终端打印一块日志", "计数和计时、三个损失、成绩、每一项奖励的分账"),
     ("⑤ 隔 250 圈存一份（14.9 节）", f"第 0、{MicroduckRlCfg.save_interval}、{2 * MicroduckRlCfg.save_interval}……圈和最后一圈：model_N.pt + .onnx",
      "检查点：接着练要用的一切"),
@@ -357,6 +364,65 @@ check("自测：4096 只，标题 Learning iteration 9/… 那块是第 10 圈�
       10 * 4096 * 24 == 983_040 and 10 * STEPS == 240)
 check("三个损失的读数：value loss 为正（是平方的平均）；surrogate loss 是个小负数；熵在 19.865 附近",
       val(ARCHIVE["Mean value loss"]) > 0 and -0.1 < val(ARCHIVE["Mean surrogate loss"]) < 0 and abs(entropy - 19.865) < 0.1)
+iter_s = round(val(ARCHIVE["Collection time"]) + val(ARCHIVE["Learning time"]), 3)
+print(f"Steps per second：存档那一圈收的 64 × 24 = 1536 条记录 ÷ 这一圈的 {iter_s:.3f} 秒 = {1536 / iter_s:.0f} 条/秒"
+      f"（它也数记录，不是环境步）")
+check("Steps per second：1536 ÷ 0.578 ≈ 2657 条/秒（64 只 × 24 步 = 1536 条，0.538 + 0.040 = 0.578 秒）",
+      round(64 * 24 / 0.578) == 2657 and round(1536 / round(0.538 + 0.040, 3)) == 2657)
+
+# ---------------------------------------------------------------------------
+banner("4b. 画图：figures/ch14_log_groups.png（读一块日志的动线：四组，每组先盯住一行）")
+GROUPS = [  # (组号和组名, [(日志行, 值, 是不是“先看”的那一行)], 看它为了确认什么)
+    ("① 计数和计时", [("Total steps", ARCHIVE["Total steps"], True), ("Steps per second", f"≈ {1536 / iter_s:.0f}", False),
+                     ("Collection time", ARCHIVE["Collection time"], False), ("Learning time", ARCHIVE["Learning time"], False)],
+     f"先看它，确认走到第几圈了。7680 = 5 × 64 × 24，数的是记录条数，不是环境步（环境步只走到 120）。\n"
+     f"Steps per second 同理：这一圈的 1536 条 ÷ {iter_s:.3f} 秒 ≈ {1536 / iter_s:.0f} 条/秒。"),
+    ("② 三个损失", [("Mean value loss", ARCHIVE["Mean value loss"], False),
+                   ("Mean surrogate loss", ARCHIVE["Mean surrogate loss"], False),
+                   ("Mean entropy loss", ARCHIVE["Mean entropy loss"], True)],
+     "先看它，因为只有熵这一行能直接翻译成“策略现在什么样”：14 口钟还剩多宽（σ = 1 时是 14 × 1.41894 = 19.865）。"
+     "另外两行只看“别突然变得很大”。"),
+    ("③ 成绩", [("Mean episode length", ARCHIVE["Mean episode length"], True), ("Mean reward", ARCHIVE["Mean reward"], False),
+                ("Mean action std", ARCHIVE["Mean action std"], False)],
+     "先看它，才读得懂另外两行：活了 35.21 步 × 0.02 = 0.7042 秒就摔。Mean reward 必须配着它读——活得久，分自然多。"),
+    ("④ 分项账", [("Episode_Reward/upright", ARCHIVE_REWARD["upright"], False),
+                  ("Episode_Reward/action_rate_l2", ARCHIVE_REWARD["action_rate_l2"], True),
+                  ("Episode_Termination/fell_over", ARCHIVE_OTHER["Episode_Termination/fell_over"], False),
+                  ("Metrics/twist/error_vel_xy", ARCHIVE_OTHER["Metrics/twist/error_vel_xy"], False)],
+     "先看的不是某一行，是一整列正负号：16 行 Episode_Reward 里，凡是惩罚项都必须 ≤ 0（14.6 节）。这里 −0.1028，对。"),
+]
+FIG_H = 14.4
+fig = plt.figure(figsize=(10.6, FIG_H))
+ax = fig.add_axes([0, 0, 1, 1])
+ax.set_xlim(0, 10.6)
+ax.set_ylim(0, FIG_H)
+ax.axis("off")
+ax.text(0.3, FIG_H - 0.45, "读一块日志的动线：四组，每组先盯住橙色那一行", fontsize=FS_TITLE, fontweight="bold", color=INK,
+        va="center")
+ax.text(0.3, FIG_H - 0.92, "数取自存档那次冒烟训练的最后一圈（64 只 × 5 圈）。你自己跑出来的值会不同，分组和动线不变。",
+        fontsize=FS_NOTE, color=MUTED, va="center")
+LINE_H, LX, LW, SPLIT = 0.62, 0.35, 7.1, 4.75      # 一行的高、左边界、框宽、名字与值的分界
+y = FIG_H - 1.55
+for gname, lines, why in GROUPS:
+    top = y
+    for row, (name, value, hot) in enumerate(lines):
+        yy = top - row * LINE_H - LINE_H
+        ax.add_patch(plt.Rectangle((LX, yy), LW, LINE_H - 0.1, facecolor=CELL_HOT if hot else CELL,
+                                   edgecolor=ORANGE if hot else CELL_EDGE, lw=2.0 if hot else 1.0))
+        ax.text(SPLIT - 0.15, yy + (LINE_H - 0.1) / 2, name + ":", ha="right", va="center", fontsize=FS_SMALL,
+                color=ORANGE if hot else INK, fontweight="bold" if hot else "normal")
+        ax.text(SPLIT, yy + (LINE_H - 0.1) / 2, value, ha="left", va="center", fontsize=FS_SMALL,
+                color=ORANGE if hot else INK)
+    bottom = top - len(lines) * LINE_H
+    ax.plot([LX + LW + 0.22] * 2, [bottom + 0.06, top - 0.06], color=BLUE, lw=2.4)
+    ax.text(LX + LW + 0.42, (top + bottom) / 2, gname, ha="left", va="center", fontsize=FS_STEP - 1,
+            fontweight="bold", color=BLUE)
+    note(ax, LX + 0.05, bottom - 0.38, why, linespacing=1.5)
+    y = bottom - 1.15
+ax.text(0.35, y + 0.22, "⑤ 页脚（Iteration time / Time elapsed / ETA）只是墙上时间，本章不再细说。", fontsize=FS_NOTE,
+        color=MUTED, va="center")
+savefig(fig, "ch14_log_groups")
+plt.close(fig)
 
 # ---------------------------------------------------------------------------
 banner("5. Episode_Reward 的单位：加权、乘 0.02、整回合加起来、再除以 20 秒")
@@ -697,11 +763,20 @@ print(f"检查点 ≈ {ckpt_numbers:,} × 4 字节 = {ckpt_bytes:,} 字节 ≈ {
 check("actor：197,774 + 14 = 197,788；critic 203,777（第 6 章 6.5、6.7 节）；可训练的一共 401,565",
       actor_all - N_ACT == actor_mlp == 197_774 and actor_all == 197_788 and critic_all == 203_777
       and trainable == 197_788 + 203_777 == 401_565 and hidden == [512, 256, 128] and MicroduckRlCfg.actor.distribution_cfg["std_type"] == "scalar")
-check("Adam 两本账 2 × 401,565 = 803,130；一共三份 401,565 × 3 = 1,204,695 个数；× 4 = 4,818,780 字节 ≈ 4.8 MB",
-      adam == 803_130 and ckpt_numbers == 401_565 * 3 == 1_204_695 and ckpt_bytes == 401_565 * 3 * 4 == 4_818_780
-      and round(4_818_780 / 1e6, 1) == 4.8)
+check("Adam 两本账 2 × 401,565 = 803,130；旋钮加两本账 401,565 + 803,130 = 1,204,695（= 401,565 × 3）；"
+      "1,204,695 × 4 = 4,818,780 字节 ≈ 4.8 MB",
+      adam == 2 * 401_565 == 803_130 and ckpt_numbers == 401_565 + 803_130 == 401_565 * 3 == 1_204_695
+      and ckpt_bytes == 1_204_695 * 4 == 401_565 * 3 * 4 == 4_818_780 and round(4_818_780 / 1e6, 1) == 4.8)
 check("ONNX：197,774 × 4 = 791,096 字节 ≈ 0.79 MB；4,818,780 ÷ 791,096 ≈ 6.1 倍",
       onnx_bytes == 197_774 * 4 == 791_096 and round(791_096 / 1e6, 2) == 0.79 and round(4_818_780 / 791_096, 1) == 6.1)
+check("字节换 MB：一兆按一百万字节算，4,818,780 ÷ 1,000,000 ≈ 4.8；791,096 ÷ 1,000,000 ≈ 0.79；每个数 4 字节 = 32 位 ÷ 8",
+      round(4_818_780 / 1_000_000, 1) == 4.8 and round(791_096 / 1_000_000, 2) == 0.79 and 32 // 8 == 4)
+print(f"存档那次的真文件：model_4.pt {ARCHIVE_SIZES['model_4.pt']:,} 字节，比算出来的多 "
+      f"{ARCHIVE_SIZES['model_4.pt'] - 4_818_780:,}；.onnx {ARCHIVE_SIZES['onnx']:,} 字节，多 "
+      f"{ARCHIVE_SIZES['onnx'] - 791_096:,}（归一化器的统计和文件格式本身；你自己跑出来的会略有不同）")
+check("存档的真文件大小（正文 14.9 节引的两个数）：4,842,943 − 4,818,780 = 24,163；793,706 − 791,096 = 2,610",
+      ARCHIVE_SIZES["model_4.pt"] - ckpt_bytes == 4_842_943 - 4_818_780 == 24_163
+      and ARCHIVE_SIZES["onnx"] - onnx_bytes == 793_706 - 791_096 == 2_610)
 save_every = MicroduckRlCfg.save_interval
 smoke_saves = sorted({i for i in range(SMOKE_ITERS) if i % save_every == 0} | {SMOKE_ITERS - 1})
 check(f"每 {save_every} 圈存一次（圈号能被 250 整除就存，第 0 圈也算），最后一圈再存一次：冒烟只有 model_0 和 model_4",
@@ -747,6 +822,9 @@ else:
         check(f"文件大小比估算多一点（归一化器的统计和文件格式）：{size_pt:,} − 4,818,780 = {size_pt - ckpt_bytes:,}（两万多）；"
               f"{size_onnx:,} − 791,096 = {size_onnx - onnx_bytes:,}",
               20_000 < size_pt - ckpt_bytes < 30_000 and 0 < size_onnx - onnx_bytes < 10_000)
+        if run_dir.name == ARCHIVE_FILES[0].removesuffix(".onnx"):   # 本机上还留着存档那一次：顺手核对手抄的两个字节数
+            check("这就是存档那次的运行目录：两个文件大小和正文 14.9 节引的 4,842,943 / 793,706 一字不差",
+                  size_pt == ARCHIVE_SIZES["model_4.pt"] and size_onnx == ARCHIVE_SIZES["onnx"])
         check("观测是 61 维：actor 第一层的形状是 [512, 61]；critic 的是 [512, 76]",
               tuple(a["mlp.0.weight"].shape) == (512, 61) and tuple(c["mlp.0.weight"].shape) == (512, 76))
 
