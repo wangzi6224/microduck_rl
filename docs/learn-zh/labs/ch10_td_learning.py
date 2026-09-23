@@ -129,11 +129,16 @@ check("自测：从第 2 格出发、两步没打滑，奖励 [−0.05, 1]，回
 
 N_MC = 3000
 rng_mc = np.random.default_rng(0)
-mc_returns = {s: np.array([discounted_return(run_episode(s, rng_mc)) for _ in range(N_MC)]) for s in range(GOAL)}
+mc_eps = {s: [run_episode(s, rng_mc) for _ in range(N_MC)] for s in range(GOAL)}
+mc_returns = {s: np.array([discounted_return(ep) for ep in mc_eps[s]]) for s in range(GOAL)}
+mc_steps = {s: np.array([len(ep) for ep in mc_eps[s]]) for s in range(GOAL)}   # 走了几步才到终点：10.2 节末尾要用
 V_mc = np.array([mc_returns[s].mean() for s in range(GOAL)] + [0.0])
 se_mc = np.array([mc_returns[s].std() / math.sqrt(N_MC) for s in range(GOAL)] + [0.0])
 print(f"\n从每一格出发各跑 {N_MC} 个回合，回报取平均：")
-table(["出发的格子", "回报的平均", "一般差多少 σ/√n"], [[s, V_mc[s], se_mc[s]] for s in range(N)], floatfmt=".3f")
+table(["出发的格子", "回报的平均", "一般差多少 σ/√n", "平均走几步到终点"],
+      [[s, V_mc[s], se_mc[s], mc_steps[s].mean() if s < GOAL else 0.0] for s in range(N)], floatfmt=".3f")
+check(f"从第 0 格出发平均走 {mc_steps[0].mean():.2f} 步才到终点（正文的 11 步；70% 向右，路上来回蹭）",
+      round(float(mc_steps[0].mean())) == 11)
 check("越靠近终点，回报的平均越高（第 0 格 < 第 1 格 < 第 2 格 < 第 3 格）", bool(np.all(np.diff(V_mc[:GOAL]) > 0)))
 check("终点格记 0：到了就结束，之后没有奖励", V_mc[GOAL] == 0.0)
 check("3 位小数：0.138、0.265、0.452、0.758；σ/√n 都不超过 0.007",
@@ -249,6 +254,11 @@ check("第 k 遍（k = 1…4），离终点 k 格的那一格第一次变大；�
 check("正文引用：第 3 遍第 1 格 0.067；第 0 格第 3 遍 −0.136，第 4 遍 −0.059（还是负的，但变大了）",
       round(float(sweeps[3][1]), 3) == 0.067 and round(float(sweeps[3][0]), 3) == -0.136
       and round(float(sweeps[4][0]), 3) == -0.059)
+check("正文引用：第 3 格第 2 遍不升反降，0.601 → 0.584（它用的 V(2) 是上一遍的 −0.05，比 0 还差），第 3 遍回到 0.693",
+      round(float(sweeps[2][3]), 3) == 0.584 and sweeps[2][3] < sweeps[1][3] and round(float(sweeps[3][3]), 3) == 0.693)
+check("字面值：0.38 × (−0.05 + 0.9 × (−0.05)) = 0.38 × (−0.095) = −0.0361，0.62 − 0.0361 = 0.5839",
+      math.isclose(-0.05 + 0.9 * -0.05, -0.095) and math.isclose(0.38 * 0.095, 0.0361)
+      and math.isclose(0.62 - 0.0361, 0.5839) and round(0.5839, 3) == 0.584)
 check("第 100 遍的 3 位小数已经和精确值一样", np.array_equal(np.round(sweeps[100], 3), np.round(V_exact, 3)))
 check("第 30 遍只有第 1 格还差最后一位（0.254 对 0.255）",
       [round(float(v), 3) for v in sweeps[30]] == [0.140, 0.254, 0.460, 0.758, 0.0])
@@ -275,6 +285,15 @@ tol_cut = 4 * cut_returns.std() / math.sqrt(len(cut_returns))
 print(f"从第 0 格出发、最多走 4 步就停：抽 20000 次，回报的平均 = {cut_returns.mean():.3f}；第 4 遍第 0 格 = {sweeps[4][0]:.3f}")
 check(f"第 k 遍 = 最多再走 k 步的平均回报：最多走 4 步的抽样平均和第 4 遍相差不到 4 × σ/√n = {tol_cut:.4f}",
       abs(cut_returns.mean() - sweeps[4][0]) < tol_cut)
+check("第 1 遍就是“最多走一步”：第 3 格 0.62 × 1 + 0.38 × (−0.05) = 0.601；第 0–2 格一步够不着终点，都是 −0.05（自测 ③）",
+      math.isclose(0.62 * 1 + 0.38 * -0.05, 0.601) and np.allclose(sweeps[1][:GOAL], [-0.05, -0.05, -0.05, 0.601]))
+check(f"收敛的道理：γ^30 = {GAMMA ** 30:.3f}，γ^60 = {GAMMA ** 60:.4f} = 0.042 × 0.042（往后的步子能加进来的分越来越少）",
+      round(GAMMA ** 30, 3) == 0.042 and round(GAMMA ** 60, 4) == 0.0018 and round(0.042 * 0.042, 4) == 0.0018)
+# 两套设定的差距（正文 10.2 节末尾）
+check(f"同一个第 0 格：本章 {V_exact[0]:.3f}，第 9 章的设定 {V_ch09[0]:.4f}，差约五倍",
+      4.5 < V_ch09[0] / V_exact[0] < 5.5)
+check("字面值：0.9² = 0.81，0.81² = 0.6561（γ = 0.9 时四步后的 +1）；0.99⁴ = 0.9606",
+      math.isclose(0.9 ** 2, 0.81) and math.isclose(0.81 ** 2, 0.6561) and round(0.99 ** 4, 4) == 0.9606)
 
 print("\n10.1 节的蒙特卡洛估计和精确值比一比：")
 table(["格子", "蒙特卡洛", "精确值", "差"],
@@ -452,6 +471,32 @@ check("字面值：0.1 × (1 − 0.758) = 0.0242 ≈ 0.024", math.isclose(0.1 * 
 check("正文引用：每走一步记一次再平均，第 3 格只高 0.004（回合结束时记是 0.027），第 0 格照样低 0.019",
       round(float(step_mean[3] - V_exact[3]), 3) == 0.004 and step_mean[3] - V_exact[3] < (tail_mean[3] - V_exact[3]) / 3
       and round(float(V_exact[0] - step_mean[0]), 3) == 0.019)
+# α 越小，两份偏差一起缩（正文 10.3 节的进阶块）。α 小学得慢，所以回合数跟着翻倍；每档换 3 组随机数取平均
+ladder = []
+for alpha_k, n_ep_k in ((0.1, 4000), (0.05, 8000), (0.025, 16000)):
+    runs = [run_td(alpha_k, sd, n_ep=n_ep_k) for sd in (1, 2, 3)]
+    tail_k = float(np.mean([r[0][n_ep_k // 2:, 3].mean() for r in runs])) - V_exact[3]
+    step_k = float(np.mean([r[1][3] for r in runs])) - V_exact[3]
+    zero_k = float(np.mean([r[1][0] for r in runs])) - V_exact[0]
+    ladder.append([alpha_k, n_ep_k, tail_k, step_k, tail_k - step_k, alpha_k * (1 - V_exact[3]), zero_k])
+print("\nα 换三档（每档 3 组随机数取平均），两份偏差一起缩：")
+table(["α", "回合数", "第 3 格回合末记", "第 3 格每步记", "两者之差", "α × (1 − 0.758)"],
+      [row[:6] for row in ladder], floatfmt=".3f")
+print("第 0 格“每步记”的偏差：" + "、".join(f"{row[6]:+.3f}" for row in ladder))
+check("“什么时候看”那一份 ≈ α × (1 − 0.758)：三档都差不到 0.003，且随 α 一起缩小",
+      all(abs(row[4] - row[5]) < 0.003 for row in ladder)
+      and ladder[0][4] > ladder[1][4] > ladder[2][4] > 0)
+check("α 固定那一份（第 0 格每步记）也随 α 一起缩小：三档依次变小，而且都是负的",
+      ladder[0][6] < ladder[1][6] < ladder[2][6] < 0)
+check(f"正文引用的三行：第 3 格回合末记 {'、'.join(f'{r[2]:.3f}' for r in ladder)}；"
+      f"每步记 {'、'.join(f'{r[3]:.3f}' for r in ladder)}；两者之差 {'、'.join(f'{r[4]:.3f}' for r in ladder)}；"
+      f"α × (1 − 0.758) {'、'.join(f'{r[5]:.3f}' for r in ladder)}；第 0 格每步记 {'、'.join(f'{r[6]:.3f}' for r in ladder)}",
+      [round(r[2], 3) for r in ladder] == [0.028, 0.013, 0.008]
+      and [round(r[3], 3) for r in ladder] == [0.006, 0.002, 0.003]
+      and [round(r[4], 3) for r in ladder] == [0.022, 0.010, 0.005]
+      and [round(r[5], 3) for r in ladder] == [0.024, 0.012, 0.006]
+      and [round(r[6], 3) for r in ladder] == [-0.018, -0.010, -0.003])
+
 seed_gaps = [float(run_td(ALPHA_TD, sd)[0][N_TD // 2:, 3].mean() - V_exact[3]) for sd in range(2, 12)]
 print(f"换 10 组随机数重跑（α = {ALPHA_TD:g}），第 3 格后一半的平均减精确值：" + "  ".join(f"{g:+.3f}" for g in seed_gaps))
 check(f"换 10 组随机数重跑，第 3 格后一半的平均每一次都高于精确值（α = {ALPHA_TD:g}）：不是运气", all(g > 0 for g in seed_gaps))
@@ -462,6 +507,11 @@ check("正文引用：第 3、2、1、0 格依次在第 1、3、17、42 个回�
       first_positive[::-1] == [1, 3, 17, 42] and round(float(trace[1, 3]), 3) == 0.095)
 check("正文引用：第 100 个回合时四格是 0.130、0.246、0.469、0.709",
       [round(float(v), 3) for v in trace[100, :GOAL]] == [0.130, 0.246, 0.469, 0.709])
+check("正文引用：第 1 个回合只有第 3 格变正（0.095），另外三格还是负的；第 10 个回合第 2 格跟上（0.143）",
+      round(float(trace[1, 3]), 3) == 0.095 and bool(np.all(trace[1, :3] < 0)) and round(float(trace[10, 2]), 3) == 0.143)
+check("自测②：第 1000 个回合第 3 格 0.870，比精确值高 0.870 − 0.758 = 0.112；第 4000 个回合 0.711 又低了",
+      math.isclose(0.870 - 0.758, 0.112) and round(float(trace[1000, 3] - V_exact[3]), 3) == 0.112
+      and trace[4000, 3] < V_exact[3])
 
 # ---------------------------------------------------------------------------
 banner("3b. 画图：figures/ch10_td_learning.png（TD 目标先错后对；走廊上四格一个个学准）")

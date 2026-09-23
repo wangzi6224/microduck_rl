@@ -1,9 +1,9 @@
 """第 9 章实验：5 格的“走廊游戏”——用最小的例子看清 智能体 / 环境 / 策略 / 回合 / 终止与超时 / 回报 / 折扣 / 目标。
 
 运行：uv run python docs/learn-zh/labs/ch09_gridworld.py
-纯 CPU，numpy + matplotlib。第 8 节只读几份源码的文字，不加载机器人、不训练。
-小节顺序与正文一致：1 ↔ 9.2，2 ↔ 9.4，3 ↔ 9.5，4 ↔ 9.6，5 ↔ 9.7，6 ↔ 9.8，7 ↔ 9.9（外加 9.0 的总览图），8 ↔「映射到项目」。
-正文“改一改”要改的三行都带 `# TWEAK-k:` 标记（第 1 节两处、第 6 节一处）。
+纯 CPU，numpy + matplotlib。第 9 节只读几份源码的文字，不加载机器人、不训练。
+小节顺序与正文一致：1 ↔ 9.2，2 ↔ 9.3，3 ↔ 9.4，4 ↔ 9.5，5 ↔ 9.6，6 ↔ 9.7，7 ↔ 9.8，8 ↔ 9.9（外加 9.0 的总览图），9 ↔「映射到项目」。
+正文“改一改”要改的三行都带 `# TWEAK-k:` 标记（第 1 节两处、第 7 节一处）。
 走廊的设定和第 10 章的实验 ch10_td_learning.py 相同，不要改。
 """
 
@@ -98,7 +98,74 @@ savefig(fig, "ch09_loop")
 plt.close(fig)
 
 # ---------------------------------------------------------------------------
-banner("2. 策略：看到什么就怎么做的规则；带随机，才会探索（9.4 节）")
+banner("2. 状态与观测：仿真器知道的一切 ⊃ critic 的 76 个数 ⊃ actor 的 61 个数（9.3 节）")
+# 走廊里状态和观测是同一样东西：全部真相就是“在第几格”，一共 N_CELLS 种，看一眼就全知道。
+check("走廊的全部真相只有一样：在第几格，一共 5 种（第 0 到第 4 格）；观测和它一模一样", N_CELLS == 5 and GOAL == N_CELLS - 1)
+
+ACTOR_BLOCKS = [("身体转速", 3), ("投影重力", 3), ("关节角度", 14), ("关节速度", 14), ("上一步的动作", 14), ("命令", 13)]
+CRITIC_EXTRA = [("前进速度", 3), ("脚底的接触力", 6), ("脚离地多高", 2), ("脚腾空多久", 2), ("脚踩实了没有", 2)]
+n_actor = sum(n for _, n in ACTOR_BLOCKS)
+n_extra = sum(n for _, n in CRITIC_EXTRA)
+table(["actor（上真机）看的块", "几个数"], [[name, n] for name, n in ACTOR_BLOCKS] + [["合计", n_actor]])
+table(["critic 比 actor 多看的块", "几个数"], [[name, n] for name, n in CRITIC_EXTRA] + [["合计", n_extra]])
+print(f"actor：{' + '.join(str(n) for _, n in ACTOR_BLOCKS)} = {n_actor}；"
+      f"critic 多看：{' + '.join(str(n) for _, n in CRITIC_EXTRA)} = {n_extra}；{n_actor} + {n_extra} = {n_actor + n_extra}")
+check("actor 的 6 块加起来是 61 个数：3 + 3 + 14 + 14 + 14 + 13 = 61（第 8 章 8.2 节那张表）",
+      n_actor == 61 and 3 + 3 + 14 + 14 + 14 + 13 == 61)
+check("critic 多看的 5 块加起来是 15 个数：3 + 6 + 2 + 2 + 2 = 15（第 15 章 15.8 节逐块讲）",
+      n_extra == 15 and 3 + 6 + 2 + 2 + 2 == 15)
+check("61 + 15 = 76：critic 的清单（第 6 章 6.7 节）", n_actor + n_extra == 76 and 61 + 15 == 76)
+check("脚上的那几块合起来 12 个数：15 − 3 = 12，6 + 2 + 2 + 2 = 12", n_extra - 3 == 12 and 6 + 2 + 2 + 2 == 12)
+check("前进速度只在 critic 那一层（actor 的 6 块里没有它）", "前进速度" not in dict(ACTOR_BLOCKS)
+      and dict(CRITIC_EXTRA)["前进速度"] == 3)
+check("投影重力在 actor 这一层，3 个数（第 2 章 2.4 节）", dict(ACTOR_BLOCKS)["投影重力"] == 3)
+
+# ---------------------------------------------------------------------------
+banner("2b. 画图：figures/ch09_state_obs.png（走廊里两者一样；机器人里三层套三层）")
+heights = [2.6, 5.2]
+fig, axes = plt.subplots(2, 1, figsize=(9.6, 0.72 * sum(heights) + 1.35),
+                         gridspec_kw={"height_ratios": heights})
+fig.subplots_adjust(top=1 - 1.05 / (0.72 * sum(heights) + 1.35), hspace=0.1, left=0.03, right=0.99, bottom=0.01)
+fig.suptitle("状态是全部真相，观测是看得到的那部分", fontsize=FS_TITLE, fontweight="bold", color=INK)
+
+ax = axes[0]
+lesson_panel(ax, "① 走廊里：两者是同一样东西", xmax=10, ymax=2.6)
+for j in range(N_CELLS):
+    cell(ax, 2.5 + 1.0 * j, 0.95, f"{j}", width=0.92, height=0.78,
+         facecolor=CELL_HOT if j == 1 else CELL, edgecolor=GREEN if j == GOAL else CELL_EDGE)
+hand(ax, 0.3, 1.34, "状态 $s_t$", color=INK, fontsize=FS_SMALL)
+hand(ax, 1.95, 1.34, "=", color=INK, fontsize=FS_STEP)
+hand(ax, 7.6, 1.34, "= 观测 $o_t$", color=INK, fontsize=FS_SMALL)
+note(ax, 0.3, 0.35, "5 个格子就是全部真相：你一抬头就全看见了，环境知道的，你也知道。")
+
+ax = axes[1]
+lesson_panel(ax, "② 机器人里：三层套三层（61 + 15 = 76）", xmax=10, ymax=5.2)
+ax.add_patch(plt.Rectangle((0.25, 0.35), 9.45, 4.05, facecolor="#f3f6f9", edgecolor=CELL_EDGE, lw=1.6))
+ax.text(0.45, 4.12, "仿真器知道的一切 ＝ 这一步的状态", fontsize=FS_SMALL, fontweight="bold", color=INK, va="center")
+ax.add_patch(plt.Rectangle((0.6, 0.62), 6.9, 3.00, facecolor=CELL, edgecolor=GREEN, lw=1.8))
+ax.text(0.8, 3.35, "critic 看的 76 个数（只在训练时用，不上真机）", fontsize=FS_SMALL, fontweight="bold", color=GREEN,
+        va="center")
+ax.text(0.85, 2.95, "多看的 15 个里，打头的是", fontsize=FS_SMALL - 2, color=INK, va="center")
+ax.text(4.0, 2.95, f"前进速度 {dict(CRITIC_EXTRA)['前进速度']} 个", fontsize=FS_SMALL - 2, color=ORANGE,
+        fontweight="bold", va="center")
+ax.text(0.85, 2.60, f"另外 {n_extra - 3} 个都在脚上：接触力 6、离地高 2、腾空 2、踩实 2", fontsize=FS_SMALL - 3,
+        color=MUTED, va="center")
+ax.add_patch(plt.Rectangle((0.95, 0.85), 6.2, 1.55, facecolor="white", edgecolor=BLUE, lw=1.8))
+ax.text(1.15, 2.15, f"actor 看的 {n_actor} 个数 ＝ 观测（导出上真机的就是它）", fontsize=FS_SMALL, fontweight="bold",
+        color=BLUE, va="center")
+ax.text(1.2, 1.76, f"投影重力 {dict(ACTOR_BLOCKS)['投影重力']}", fontsize=FS_SMALL - 2, color=ORANGE, fontweight="bold",
+        va="center")
+ax.text(2.7, 1.76, "· 身体转速 3", fontsize=FS_SMALL - 2, color=INK, va="center")
+ax.text(1.2, 1.40, "· 关节角度 14 · 关节速度 14 · 上一步的动作 14", fontsize=FS_SMALL - 2, color=INK, va="center")
+ax.text(1.2, 1.06, "· 命令 13（人让它往哪走、头摆成什么样）", fontsize=FS_SMALL - 2, color=INK, va="center")
+for i, line in enumerate(("只有仿真器知道、", "两张网络都不看：", "· 地面有多滑", "· 每个零件多重", "· 机身的坐标")):
+    ax.text(7.75, 3.50 - 0.42 * i, line, fontsize=FS_SMALL - 3, color=MUTED if i < 2 else INK, va="center")
+note(ax, 0.3, 0.10, "里面那层的每个数，外面那层都有。前进速度在 critic 那一层：状态里有，actor 的观测里没有。")
+savefig(fig, "ch09_state_obs")
+plt.close(fig)
+
+# ---------------------------------------------------------------------------
+banner("3. 策略：看到什么就怎么做的规则；带随机，才会探索（9.4 节）")
 P_MOSTLY = 0.9   # “九成按 →”这个策略按 → 的概率（故意不用 0.8，免得和地面的 80% 混在一起）
 
 
@@ -152,7 +219,7 @@ check("自测：总是按 → 真往右挪 1 × 0.8 = 0.8；随机乱按 0.5 × 
       round(p_right_always, 2) == 0.8 and round(p_right_coin, 2) == 0.5 and round(0.4 + 0.1, 2) == 0.5)
 
 # ---------------------------------------------------------------------------
-banner("3. 回合与轨迹：“总是按 →”跑两局，把每一步记下来（9.5 节）")
+banner("4. 回合与轨迹：“总是按 →”跑两局，把每一步记下来（9.5 节）")
 
 
 def run_episode(policy, rng, limit=TIME_LIMIT):
@@ -192,7 +259,7 @@ check("自测：第一局 4 步 → 5 个状态（第 0 到第 4 格）、4 个�
       len(traj_a) + 1 == 5 and [x[1] for x in traj_a] + [traj_a[-1][4]] == [0, 1, 2, 3, 4] and rewards_a == [-0.05, -0.05, -0.05, 1.0])
 
 # ---------------------------------------------------------------------------
-banner("3b. 画图：figures/ch09_trajectory.png（同一个策略、同一个起点，两局两条轨迹）")
+banner("4b. 画图：figures/ch09_trajectory.png（同一个策略、同一个起点，两局两条轨迹）")
 
 
 def trajectory_panel(ax, traj, title, foot):
@@ -239,7 +306,7 @@ else:
     plt.close(fig)
 
 # ---------------------------------------------------------------------------
-banner("4. 终止与超时：一局有两种收场（9.6 节）")
+banner("5. 终止与超时：一局有两种收场（9.6 节）")
 rng = np.random.default_rng(4)
 endings = {"终止": 0, "超时": 0}
 last_cell_on_timeout = [0] * N_CELLS
@@ -252,6 +319,10 @@ print(f"“随机乱按”跑 2000 局：踩上终点而终止 {endings['终止'
 print("超时那几局，截断时站在哪一格：", "  ".join(f"第 {j} 格 {c} 局" for j, c in enumerate(last_cell_on_timeout) if j != GOAL))
 check("随机乱按 2000 局：1878 局终止、122 局超时（种子固定时的这一次）", endings == {"终止": 1878, "超时": 122})
 check("超时收场的局，一局也没站在终点上（站在终点就是终止了）", last_cell_on_timeout[GOAL] == 0)
+check(f"两行数加得上：终止 + 超时 = {endings['终止']} + {endings['超时']} = {sum(endings.values())} 局；"
+      f"各格加起来 = {' + '.join(str(c) for c in last_cell_on_timeout if c)} = {sum(last_cell_on_timeout)} 局",
+      sum(endings.values()) == 2000 and sum(last_cell_on_timeout) == endings["超时"]
+      and 1878 + 122 == 2000 and 48 + 34 + 26 + 14 == 122)
 check("超时收场时正站在第 3 格（离终点一步）的有 14 局", last_cell_on_timeout[3] == 14)
 g_z_70 = -math.cos(math.radians(70))
 print(f"机器人倾斜 70° 时，投影重力的第 3 项 g_z = −cos 70° = {g_z_70:.3f}（站直时是 −1）")
@@ -263,7 +334,7 @@ check("机器人一局最长 20 ÷ 0.02 = 1000 步；1000 ÷ 24 = 41.67，攒数
       episode_steps == 1000 and round(episode_steps / 24, 2) == 41.67)
 
 # ---------------------------------------------------------------------------
-banner("5. 回报：从这一步往后的分，打着折加起来（9.7 节）")
+banner("6. 回报：从这一步往后的分，打着折加起来（9.7 节）")
 
 
 def discounted_return(rewards, gamma):
@@ -308,7 +379,7 @@ G0_js = 0 + 0.9 * (0 + 0.9 * (1 + 0.9 * 0))   # JS 的 reduceRight 按同样的�
 check("reduceRight 一步步算出的数打印出来正好是 0.81（浏览器和 Python 用的是同一种小数）", repr(G0_js) == "0.81")
 
 # ---------------------------------------------------------------------------
-banner("5b. 画图：figures/ch09_return_by_hand.png（三步经历 [0, 0, 1] 的回报，两种算法）")
+banner("6b. 画图：figures/ch09_return_by_hand.png（三步经历 [0, 0, 1] 的回报，两种算法）")
 fig, axes = lesson_figure(3, "回报：从这一步往后的分，每远一步多打一次 0.9 折", panel_height=3.35, width=9.6)
 ax = axes[0]
 lesson_panel(ax, "① 从第 0 步看：越远的分，多乘几次 0.9")
@@ -349,7 +420,7 @@ savefig(fig, "ch09_return_by_hand")
 plt.close(fig)
 
 # ---------------------------------------------------------------------------
-banner("6. 折扣因子 γ 看多远：每过一步乘一次 γ（9.8 节）")
+banner("7. 折扣因子 γ 看多远：每过一步乘一次 γ（9.8 节）")
 GAMMA = 0.99  # TWEAK-2: 0.9
 STEP_SECONDS = 0.02    # 50 Hz：一步 0.02 秒
 rows = []
@@ -390,7 +461,7 @@ check("γ 越接近 1，第 1/(1 − γ) 步的折扣越接近 1/e：0.9^10 = 0.
 check("100 Hz 走两步 = 50 Hz 走一步：0.99499 × 0.99499 ≈ 0.99", round(0.99499 * 0.99499, 4) == 0.99)
 
 # ---------------------------------------------------------------------------
-banner("6b. 画图：figures/ch09_discount.png（γ^k 怎样随步数衰减）")
+banner("7b. 画图：figures/ch09_discount.png（γ^k 怎样随步数衰减）")
 fig = plt.figure(figsize=(9.6, 13.2))
 fig.suptitle(f"γ = {GAMMA:g}：每过一步乘一次 {GAMMA:g}，{half_life} 步后剩一半", fontsize=FS_TITLE, fontweight="bold",
              color=INK, y=0.985)
@@ -437,7 +508,7 @@ savefig(fig, "ch09_discount")
 plt.close(fig)
 
 # ---------------------------------------------------------------------------
-banner("7. 目标：比的是很多局的平均回报（9.9 节）")
+banner("8. 目标：比的是很多局的平均回报（9.9 节）")
 
 
 def exact_average(p_right, gamma, limit=TIME_LIMIT):
@@ -498,6 +569,9 @@ print(f"总是按 →：4 步就到（四步都照办）的局 {n_four} 局，�
       f"理论上 {1 - P_SLIP:g} × {1 - P_SLIP:g} × {1 - P_SLIP:g} × {1 - P_SLIP:g} = {p_four:.4f}；回报是负的局 {n_negative} 局")
 check("4 步就到的局：0.8 × 0.8 × 0.8 × 0.8 = 0.4096，约四成；2000 局里有 829 局；回报是负的有 6 局（种子固定）",
       round(0.8 * 0.8 * 0.8 * 0.8, 4) == 0.4096 and n_four == 829 and n_negative == 6)
+print(f"  照 {p_four:.4f} 算，2000 局里“该”有 {round(p_four * N_EPISODES)} 局 4 步就到；实际数出来 {n_four} 局")
+check("字面值重算：0.4096 × 2000 = 819.2，四舍五入 819 局；实际 829 局，差 10 局（抽样的正常起伏）",
+      round(0.4096 * 2000, 1) == 819.2 and round(0.4096 * N_EPISODES) == 819 and n_four - 819 == 10)
 se_four = math.sqrt(p_four * (1 - p_four) / N_EPISODES)
 check(f"4 步就到的比例 {n_four / N_EPISODES:.4f} 靠近理论值 {p_four:.4f}（差不到 4 倍标准误差 {4 * se_four:.4f}）",
       abs(n_four / N_EPISODES - p_four) < 4 * se_four)
@@ -515,9 +589,15 @@ check("第一局（4 步）的 G_0 = 0.822；精确值 0.7015 和 2000 局的平
 check("第二局 G_0 = −0.05 × 4.901 + 0.951 = 0.706（4.901、0.951 都按实算的值核对；字面值重算也是 0.706）",
       round(G0_b, 3) == 0.706 and round(geo5, 3) == 4.901 and round(GAMMA ** 5, 3) == 0.951
       and round(-0.05 * 4.901 + 0.951, 3) == 0.706)
+two_mean = (round(G0_a[GAMMA], 3) + round(G0_b, 3)) / 2
+print(f"只拿这两局取平均：({round(G0_a[GAMMA], 3)} + {round(G0_b, 3)}) ÷ 2 = {two_mean:.3f}；"
+      f"{N_EPISODES} 局的平均是 {returns_right.mean():.3f}")
+check("迷你版的“取平均”：(0.822 + 0.706) ÷ 2 = 0.764；两局还不够，2000 局的平均是 0.703",
+      round(two_mean, 3) == 0.764 and round((0.822 + 0.706) / 2, 3) == 0.764
+      and round(float(returns_right.mean()), 3) == 0.703)
 
 # ---------------------------------------------------------------------------
-banner("7b. 画图：figures/ch09_reward_return_value.png（奖励 / 回报 / 很多局回报的平均）")
+banner("8b. 画图：figures/ch09_reward_return_value.png（奖励 / 回报 / 很多局回报的平均）")
 fig = plt.figure(figsize=(9.6, 15.2))
 fig.suptitle("奖励、回报、价值：一步的分、一局的总分、很多局的平均", fontsize=FS_TITLE, fontweight="bold", color=INK, y=0.99)
 ax1 = fig.add_axes([0.14, 0.715, 0.82, 0.18])
@@ -581,7 +661,7 @@ savefig(fig, "ch09_reward_return_value")
 plt.close(fig)
 
 # ---------------------------------------------------------------------------
-banner("7c. 画图：figures/ch09_overview.png（9.0 节的总览：一步、一局、一个总分、很多局的平均）")
+banner("8c. 画图：figures/ch09_overview.png（9.0 节的总览：一步、一局、一个总分、很多局的平均）")
 if len(rewards_a) > 6:
     print("  第一局太长（多半是改了打滑概率），总览图只照着正文那一局画，跳过。")
 else:
@@ -621,7 +701,7 @@ else:
     plt.close(fig)
 
 # ---------------------------------------------------------------------------
-banner("8. 映射到项目：正文引用的常数和源码行还在不在")
+banner("9. 映射到项目：正文引用的常数和源码行还在不在")
 REPO = Path(__file__).resolve().parents[3]
 print(f"一步 = 4 个物理小步 × 0.005 秒 = {4 * 0.005:g} 秒（50 Hz）；一局最长 20 秒 = {math.ceil(20.0 / (4 * 0.005))} 步")
 check("4 × 0.005 = 0.02 秒一步，1 秒 50 步；20 秒 = 1000 步", math.isclose(4 * 0.005, 0.02) and round(1 / 0.02) == 50

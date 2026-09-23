@@ -89,7 +89,7 @@
 | 折扣因子 | discount factor | γ，远处奖励打折 | §9.7 |
 | 价值函数 | value function | 从 s 出发的平均回报 | §10.1 |
 | 贝尔曼方程 | Bellman equation | 价值的递归关系 | §10.2 |
-| 蒙特卡洛 / TD | Monte Carlo / temporal difference | 跑完取平均 / 走一步修一点 | §10.1, §10.3 |
+| TD 误差 | temporal-difference error | 走一步就修一点：δ = 这一步的奖励 + 打折的下一格估计 − 这一格估计（"跑完一局取平均"的蒙特卡洛见 §4.5、§10.1） | §10.3 |
 | 自举 | bootstrapping | 目标里用自己的估计 | §10.3 |
 | 动作价值 / 优势 | action value Q / advantage A | 先做 a 再按策略 / 比平均好多少 | §10.4 |
 | 非对称 actor-critic | asymmetric actor-critic | critic 看特权信息 | §10.5 |
