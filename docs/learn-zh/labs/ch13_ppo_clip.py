@@ -20,9 +20,8 @@ import torch
 from torch.distributions import Normal, kl_divergence
 
 from _common import banner, check, done, lines_in_order, num, savefig, table
-from _draw import (BLUE, CELL, CELL_EDGE, CELL_HOT, FAINT, FS_NOTE, FS_SMALL, FS_STEP, FS_TICK, GREEN, INK, MUTED,
-                   ORANGE, WHITE_BOX, arrow, cell, data_axes, hand, lesson_figure, lesson_panel, note, panel_note,
-                   panel_title, plt)
+from _draw import (BLUE, CELL, CELL_HOT, FAINT, FS_SMALL, FS_STEP, GREEN, INK, MUTED, ORANGE, WHITE_BOX, arrow,
+                   cell, data_axes, hand, lesson_figure, lesson_panel, note, panel_note, panel_title, plt)
 
 np.set_printoptions(precision=4, suppress=True)
 torch.set_default_dtype(torch.float64)   # 用双精度，打印出来的末几位和手算一致
@@ -196,7 +195,6 @@ ax.set_ylim(0, 0.46)
 ax.set_xticks([-3, -2, -1, 0, 0.5, 1, 2, 3])
 ax.set_xticklabels(["−3", "−2", "−1", "0", "0.5", "1", "2", "3"])
 ax.axvline(A_REC, color=INK, lw=1.4, ls=":")
-ax.plot([A_REC, A_REC], [h_old, h_new], color=INK, lw=0)
 ax.scatter([A_REC], [h_old], s=90, color=BLUE, zorder=6)
 ax.scatter([A_REC], [h_new], s=90, color=ORANGE, zorder=6)
 ax.text(A_REC - 0.04, h_old - 0.075, f"旧钟 {h_old:.5f}", color=BLUE, fontsize=FS_SMALL, ha="right", va="center")
@@ -416,8 +414,9 @@ check("V = −0.1（往反方向跑）→ max(0.36, 0.25) = 0.36，用不裁剪�
 
 ent_one = Normal(0.0, 1.0).entropy().item()
 ent14 = Normal(torch.zeros(14), torch.ones(14)).entropy().sum().item()
-print(f"熵：一口 σ = 1 的钟 {ent_one:.5f}，14 口相加 {ent14:.3f}；乘 0.01 = {0.01 * ent14:.3f}（第 11 章 11.6 节）")
-check("熵：14 × 1.41894 = 19.865，乘 0.01 是 0.199", round(ent14, 3) == 19.865 and round(0.01 * ent14, 3) == 0.199)
+print(f"熵：一口 σ = 1 的钟 {ent_one:.5f}，14 口相加 {ent14:.3f}；乘 0.01 = {0.01 * ent14:.5f}（第 11 章 11.6 节）")
+check("熵：14 × 1.41894 = 19.865（字面值重算），乘 0.01 是 0.19865",
+      round(ent14, 3) == 19.865 and round(14 * 1.41894, 3) == 19.865 and round(0.01 * ent14, 5) == 0.19865)
 
 VAL_COEF, ENT_COEF = 1.0, 0.01
 loss_one = -four_val[(1.5, 2.0)] + VAL_COEF * vparts[0.55][3] - ENT_COEF * round(ent14, 3)
@@ -460,6 +459,15 @@ check("KL：σ = 1、中心挪 0.2 → (1 + 0.2²) ÷ 2 − 0.5 = 0.52 − 0.5 =
       math.isclose(kl_a, 0.02) and math.isclose((1 + 0.2 ** 2) / 2 - 0.5, 0.02) and math.isclose(kl_torch, 0.02))
 check("挪 0.1 → 0.005", math.isclose(kl_half, 0.005) and SHIFT == 0.2)
 check(f"理论：挪动翻倍，KL 翻四倍（现在 {kl_a:.4g} ÷ {kl_half:.4g} = {kl_a / kl_half:.4g}）", math.isclose(kl_a / kl_half, 4.0))
+# 进阶折叠：KL 就是 13.2 节那个 ln 比率，取相反数、在旧钟下对所有动作取平均
+a_many = np.random.default_rng(0).normal(0.0, 1.0, 200_000)      # 从旧钟（中心 0、σ = 1）里抽 20 万个动作
+ln_ratio_many = (a_many ** 2 - (a_many - SHIFT) ** 2) / 2        # 每个动作的 ln 比率（13.2 节：[a² − (a − 挪动)²] ÷ 2）
+ln_ratio_mean = float(ln_ratio_many.mean())
+print(f"从旧钟抽 20 万个动作：ln 比率的平均 = {ln_ratio_mean:.4f}；取相反数 = {-ln_ratio_mean:.4f}，正是 KL {kl_a:.4g}")
+check(f"进阶折叠：ln 比率在旧钟下的平均 {ln_ratio_mean:.4f}，取相反数正是 KL {kl_a:.4g}（正文的数：−0.0200，固定种子）",
+      round(ln_ratio_mean, 4) == -0.02 and SHIFT == 0.2 and abs(ln_ratio_mean + kl_a) < 0.002)
+check("进阶折叠：动作 0.5 那一条的 ln 比率是 0.08，只是一条，不是平均（13.2 节）",
+      math.isclose(ln_new - ln_old, 0.08))
 d_target = math.sqrt(2 * 0.01)
 d_14 = math.sqrt(2 * 0.01 / 14)
 print(f"KL = 0.01 对应挪 {d_target:.4f} 个 σ；14 个关节一起挪、合计 0.01：每个挪 {d_14:.4f} 个 σ")
@@ -613,7 +621,7 @@ ax_bot.text(d_max * 0.985, 0.0125, "0.005 ~ 0.02：不动", color=MUTED, fontsiz
 ax_bot.set_xlim(0, d_max)
 ax_bot.set_ylim(0, kl_top)
 ax_bot.set_xticks([0, SHIFT / 2, d_target, SHIFT] + ([0.3] if d_max >= 0.3 and SHIFT < 0.29 else []))
-ax_bot.set_xticklabels(["0", num(SHIFT / 2), f"{d_target:.2f}", num(SHIFT)] + (["0.3"] if d_max >= 0.3 and SHIFT < 0.29 else []))
+ax_bot.set_xticklabels(["0", num(SHIFT / 2), f"{d_target:.4f}", num(SHIFT)] + (["0.3"] if d_max >= 0.3 and SHIFT < 0.29 else []))
 ax_bot.set_yticks([0, 0.005, 0.01, 0.02] + ([0.04] if kl_top > 0.04 else []))
 ax_bot.set_yticklabels(["0", "0.005", "0.01", "0.02"] + (["0.04"] if kl_top > 0.04 else []))
 panel_title(fig, [ax_bot], "② KL = 挪动² ÷ 2：挪一倍远，KL 变四倍")
@@ -766,6 +774,8 @@ if ppo_path and ppo_path.is_file():
         lr_real.append(lr_state.learning_rate)
     check("源码原行：六次 KL 调出来的学习率，和 13.5 节的表一样", lr_real == lr_seq)
 
+    check("rsl_rl/algorithms/ppo.py 的 process_env_step()：采数据时每走一个环境步，就更新一次输入归一化器（13.5 节折叠块）",
+          "def process_env_step(" in ppo_text and "self.actor.update_normalization(obs)" in ppo_text)
     dist_path = rsl_dir / "modules" / "distribution.py"
     dist_text = dist_path.read_text(encoding="utf-8") if dist_path.is_file() else ""
     check("rsl_rl/modules/distribution.py：KL(旧‖新)，14 个关节相加",

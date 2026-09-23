@@ -36,10 +36,10 @@ FIGS = BOOK / "figures"
 
 # --- rewrite state (edit as chapters move through the pipeline) ---------------------
 ALL_CHAPTERS = set(range(1, 20))
-REWRITTEN: set[int] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 17}   # held to the strict tier
-PENDING_SYNC: set[int] = set()   # rewritten, but README/appendix refs to them not remapped yet
+REWRITTEN: set[int] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19}   # held to the strict tier
+PENDING_SYNC: set[int] = {16, 18, 19}   # rewritten, but README/appendix refs to them not remapped yet
 B_SYNCED: set[int] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 17}  # appendix B "首次出现" rows rebuilt for these chapters
-WAVE: dict[int, int] = {2: 0, 3: 1, 1: 2, 4: 2, 5: 3, 6: 3, 7: 3, 8: 3, 9: 4, 10: 5, 15: 6, 11: 7, 12: 8, 17: 9, 13: 10, 14: 10}   # a section-numbered ref X→Y (X≠Y) needs WAVE[Y] < WAVE[X]
+WAVE: dict[int, int] = {2: 0, 3: 1, 1: 2, 4: 2, 5: 3, 6: 3, 7: 3, 8: 3, 9: 4, 10: 5, 15: 6, 11: 7, 12: 8, 17: 9, 13: 10, 14: 11, 16: 12, 18: 12, 19: 12}   # a section-numbered ref X→Y (X≠Y) needs WAVE[Y] < WAVE[X]
 
 # --- waivers: keyed by file name + substring, never by line number -------------------
 WAIVERS = {

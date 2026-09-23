@@ -74,6 +74,26 @@ def pkg_file(pkg: str, *parts: str):
     return path if path.is_file() else None
 
 
+def archive_run_dir():
+    """存档那次运行留下的目录（还在本机上的话）：用来核对上面手抄的 ARCHIVE_EVENTS。"""
+    d = REPO / "logs" / "rsl_rl" / "velocity" / ARCHIVE_FILES[0].removesuffix(".onnx")
+    return d if d.is_dir() else None
+
+
+def read_events(run_dir, tags):
+    """从 tensorboard 事件文件里读出几列标量；读不了就返回 None（不影响其余检查）。"""
+    try:
+        from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
+
+        ea = EventAccumulator(str(run_dir))
+        ea.Reload()
+        have = ea.Tags()["scalars"]
+        return {t: [e.value for e in ea.Scalars(t)] for t in tags if t in have}
+    except Exception as err:
+        print(f"  （读事件文件没成功：{type(err).__name__}，跳过）")
+        return None
+
+
 def find_run_dir():
     """你自己跑 GPU 实验留下的运行目录（最新的一个）；没有就返回 None。"""
     runs = sorted((REPO / "logs" / "rsl_rl" / "velocity").glob("*learnzh-ch14*"))
@@ -142,6 +162,17 @@ check("墙上时间：最后一圈 0.538 + 0.040 = 0.578 s，和事件文件第 
       round(0.538 + 0.040, 3) == 0.578 == round(wall[4], 3) and round(wall[0], 2) == 1.01 and round(wall[1], 2) == 0.82
       and all(round(w, 2) in (0.57, 0.58) for w in wall[2:]) and round(sum(wall), 2) == 3.56
       and val(ARCHIVE["Collection time"]) == 0.538 and val(ARCHIVE["Learning time"]) == 0.040)
+
+_arch_dir = archive_run_dir()
+if _arch_dir is None:
+    print("  （本机没有存档那次的运行目录，上面这几行秒数只能按手抄的来；跑过 GPU 实验的话第 10 节会读你自己的事件文件）")
+else:
+    _mine = read_events(_arch_dir, ARCHIVE_EVENTS)
+    if _mine:
+        check(f"手抄没抄错：{_arch_dir.name} 的事件文件里，这 {len(ARCHIVE_EVENTS)} 列和 ARCHIVE_EVENTS 逐个对得上",
+              all(len(_mine.get(tag, [])) == len(vals)
+                  and all(round(a, 6) == round(b, 6) for a, b in zip(_mine[tag], vals))
+                  for tag, vals in ARCHIVE_EVENTS.items()))
 
 REAL_ENVS, REAL_ITERS = 4096, 1000
 real = clocks(REAL_ENVS, STEPS, REAL_ITERS)
@@ -376,7 +407,7 @@ for j, (text, hot) in enumerate([("函数值 0.5", False), ("× 权重 2", False
                                  (f"= {per_step:.2f}", True)]):
     cell(ax, 0.45 + 2.3 * j, 1.55, text, width=2.3, height=0.9, fontsize=FS_STEP - 1,
          facecolor=CELL_HOT if hot else CELL, edgecolor=ORANGE if hot else CELL_EDGE, color=ORANGE if hot else INK)
-note(ax, 0.45, 0.75, "一回合里每一步都这样记一笔，只要机器人还没摔。")
+note(ax, 0.45, 0.75, "一回合里每一步都这样记一笔，只要机器人还没摔。这一笔恰好也是 0.02，和左边那个“0.02 秒”不是一回事。")
 
 
 def time_bar(ax, alive, label_sum, label_read):
@@ -385,7 +416,10 @@ def time_bar(ax, alive, label_sum, label_read):
     ax.add_patch(plt.Rectangle((x_of(0), 1.95), x_of(EPISODE_S) - x_of(0), 0.72, facecolor="white", edgecolor=CELL_EDGE,
                                lw=1.2, ls="--"))
     ax.add_patch(plt.Rectangle((x_of(0), 1.95), x_of(alive) - x_of(0), 0.72, facecolor=CELL, edgecolor=BLUE, lw=1.6))
-    ax.text(x_of(alive / 2), 2.31, label_sum, ha="center", va="center", fontsize=FS_SMALL, color=BLUE)
+    if alive >= EPISODE_S / 2:                                # 条够宽：算式写在条里
+        ax.text(x_of(alive / 2), 2.31, label_sum, ha="center", va="center", fontsize=FS_SMALL, color=BLUE)
+    else:                                                     # 条太窄：算式挪到条的上方，免得压到虚线框上
+        ax.text(x_of(0), 2.88, label_sum, ha="left", va="center", fontsize=FS_SMALL, color=BLUE)
     for t in range(0, int(EPISODE_S) + 1, 5):
         ax.plot([x_of(t), x_of(t)], [1.95, 1.78], color=MUTED, lw=1.3)
         ax.text(x_of(t), 1.52, f"{t} s", ha="center", va="center", fontsize=FS_TICK, color=MUTED)
@@ -397,11 +431,11 @@ def time_bar(ax, alive, label_sum, label_read):
 
 ax = axes[1]
 lesson_panel(ax, f"② 活满 {EPISODE_S:g} 秒", xmax=10, ymax=4)
-time_bar(ax, EPISODE_S, f"{n_full} 步 × {per_step:.2f} = {total_full:g}", f"{total_full:g} ÷ 20 = {read_full:g}")
+time_bar(ax, EPISODE_S, f"{n_full} 步 × 每步 {per_step:.2f} = {total_full:g}", f"{total_full:g} ÷ 20 = {read_full:g}")
 note(ax, 0.45, 0.72, "日志把回合里的总和再除以 20 秒（配置里的回合时长），满分跑满时读数 = 权重。")
 ax = axes[2]
 lesson_panel(ax, f"③ 只活 {ALIVE_S:g} 秒", xmax=10, ymax=4)
-time_bar(ax, ALIVE_S, f"{n_short} × {per_step:.2f} = {total_short:g}", f"{total_short:g} ÷ 20 = {read_short:g}")
+time_bar(ax, ALIVE_S, f"{n_short} 步 × 每步 {per_step:.2f} = {total_short:g}", f"{total_short:g} ÷ 20 = {read_short:g}")
 note(ax, 0.45, 0.72, f"每一步做得一样好，读数差 {read_full / read_short:g} 倍——差在活了多久。")
 savefig(fig, "ch14_episode_reward_units")
 plt.close(fig)
@@ -424,6 +458,8 @@ for name, t in terms.items():
     rows.append([name, fname, "mjlab" if mod.startswith("mjlab.") else "microduck", f"{t.weight:g}", kind])
 table(["奖励项", "函数", "谁写的", "起步权重", "写法"], rows)
 print(f"head_pose_bias 的课程权重：{' → '.join(f'{w:g}' for w in bias_stages)}")
+check("配置里一共 16 项奖励，存档的 Episode_Reward 也是 16 行（正文 14.4、14.6、14.10 说的“16 项”）",
+      len(terms) == 16 == len(ARCHIVE_REWARD))
 check("配置：8 个代价型惩罚都是 mjlab 的函数、权重都 < 0；16 项里没有别的负权重",
       len(cost_style) == 8 and all(terms[n].weight < 0 and terms[n].func.__module__.startswith("mjlab.") for n in cost_style)
       and sum(t.weight < 0 for t in terms.values()) == 8)
@@ -807,6 +843,10 @@ OTHER = [  # （包, 路径, 要核对的行, 说明）
                                         '{"Mean reward:":>{pad}} {statistics.mean(self.rewbuffer):.2f}',
                                         '{"Mean action std:":>{pad}} {action_std.mean().item():.2f}'],
      "logger.py：Total steps 每圈加 24 × 机器人只数；Mean reward 是最近 100 个回合；学习率只进 wandb"),
+    ("rsl_rl", ("runners", "on_policy_runner.py"), ["saved_dict = self.alg.save()",
+                                                     'saved_dict["iter"] = self.current_learning_iteration',
+                                                     'saved_dict["infos"] = infos'],
+     "on_policy_runner.py：检查点 = PPO 存的三样 + iter + infos，正好 5 样（14.9 节）"),
     ("rsl_rl", ("algorithms", "ppo.py"), ["self.learning_rate = max(1e-5, self.learning_rate / 1.5)",
                                           "self.learning_rate = min(1e-2, self.learning_rate * 1.5)",
                                           "self.storage.clear()",

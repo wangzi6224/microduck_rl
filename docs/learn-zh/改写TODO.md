@@ -9,12 +9,12 @@
 |---|---|
 | 第 2 章 | 范文，不改 |
 | 第 1、3–12、15、17 章 | **已验收**（作者 → 评审兼修订 → 主编验收），附录 A/B 与 README 里指向它们的小节号已同步 |
-| 第 13 章 PPO | **作者稿完成，待评审**（588 行、5 张图、72 处 check，机械检查全过） |
-| 第 14 章 训练回路全貌 | **作者稿基本完成，待评审**（740 行、6 张图；CPU 伴生实验 80 处 check 全过、TWEAK 测试通过、检查器 0）。作者在最后跑 TWEAK 时被停下，**没交稿报告** |
-| 第 16、18、19 章 | **未开工**，任务书已写好 |
+| 第 13 章 PPO | **已验收（09-23）**（594 行、5 张图、76 处 check） |
+| 第 14 章 训练回路全貌 | **已验收（09-23）**（740 行、6 张图、83 处 check；评审替作者补了 6 项自检） |
+| 第 16、18、19 章 | **E 波作者改写中（09-23 起）**，任务书和冻结输入已就绪 |
 | 阶段 3（全书收尾） | 未开始 |
 
-收尾时的验证：全量 pytest 204 passed、2 skipped、3 xfailed（xfail 就是还没改写的第 16、18、19 章）；第 2 章与 `src/` 未被改动。快照 `07-handoff`。09-22 按用户要求全部提交到`develop` 分支（上游是 `fork/zh-docs`）。
+收尾时的验证：全量 pytest 204 passed、2 skipped、3 xfailed（xfail 就是还没改写的第 16、18、19 章）；第 2 章与 `src/` 未被改动。快照 `07-handoff`。09-22 按用户要求全部提交，已合并进 `develop` 分支（上游 `fork/zh-docs`，commit 3ce972c）。
 
 ## 1. 下一次按这个顺序做
 
@@ -80,6 +80,10 @@ cp -r $P/briefs $P/gpu_archive $P/drafts $S/ && cp $P/brief_ch*_inputs.md $S/
 3. README：讲法顺序改成"手算先于符号"；代码引用约定改成"文件名 + 函数名，不写行号"；目录表；卡点表剩余行（第 16、18、19 章）；新写一段带日期的"本轮校验范围"（如实写跑了什么、没跑什么）；链到编写规范。
 4. 全量验证：`uv run --with pytest pytest tests/test_learn_docs.py tests/test_learn_labs.py -q -p no:cacheprovider`（约 4 分钟，有 GPU 时会跑 GPU 实验）；第 2 章未改：`git diff --quiet 64faf9b -- docs/learn-zh/part1-math/02-向量与矩阵.md docs/learn-zh/labs/ch02_vectors.py 'docs/learn-zh/figures/ch02_*.png'`。
 5. 给用户写最终报告；问改写台账、这份 TODO 留不留。
+
+### 1.6b 用户的收尾指令（2026-09-23）
+
+**全部做完后提交并推送**：提交到 `develop`（上游 `fork/zh-docs`），然后 `git push`。中途可以按波次做检查点提交，最后一次提交后必须推送。
 
 ### 1.7 等用户决定
 
