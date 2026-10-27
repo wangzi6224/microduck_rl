@@ -124,6 +124,12 @@ check("回合二从后往前：1 → 0.85 → 0.715（每个中间数都是“�
 check("回合二按定义逐项加：−0.05 + 0.9 × (−0.05) + 0.81 × 1 = 0.715",
       math.isclose(-0.05 + 0.9 * -0.05 + 0.81 * 1, 0.715) and math.isclose(G_two, 0.715))
 check("两个回合的平均 (1 + 0.715) / 2 = 0.8575", math.isclose((G_one + G_two) / 2, 0.8575))
+# 倒着算为什么和顺着算一样：顺着算的后两项都带一个 0.9（0.81 = 0.9 × 0.9），提到括号外面
+check("提出 0.9：0.9 × (−0.05) + 0.9 × 0.9 × 1 = 0.9 × (−0.05 + 0.9 × 1) = 0.9 × 0.85；0.715 = −0.05 + 0.9 × 0.85；"
+      "0.81 = 0.9 × 0.9；分配律 (2 + 3) × 4 = 2 × 4 + 3 × 4",
+      math.isclose(0.9 * -0.05 + 0.9 * 0.9 * 1, 0.9 * (-0.05 + 0.9 * 1)) and math.isclose(-0.05 + 0.9 * 1, 0.85)
+      and math.isclose(-0.05 + 0.9 * 0.85, 0.715) and math.isclose(0.9 * 0.9, 0.81) and (2 + 3) * 4 == 2 * 4 + 3 * 4
+      and math.isclose(G_two, episode_two[0] + GAMMA * backward[1]))
 check("自测：从第 2 格出发、两步没打滑，奖励 [−0.05, 1]，回报 −0.05 + 0.9 × 1 = 0.85 = 回合二倒着算的中间数",
       math.isclose(discounted_return([-0.05, 1.0]), 0.85) and math.isclose(backward[1], 0.85))
 
@@ -143,6 +149,12 @@ check("越靠近终点，回报的平均越高（第 0 格 < 第 1 格 < 第 2 �
 check("终点格记 0：到了就结束，之后没有奖励", V_mc[GOAL] == 0.0)
 check("3 位小数：0.138、0.265、0.452、0.758；σ/√n 都不超过 0.007",
       [round(float(v), 3) for v in V_mc[:GOAL]] == [0.138, 0.265, 0.452, 0.758] and bool(np.all(np.round(se_mc, 3) <= 0.007)))
+sigma_3 = float(mc_returns[3].std())                      # 第 3 格：单个回合的回报一般离平均多远
+print(f"第 3 格：单个回合的回报一般差 σ = {sigma_3:.4f}；√{N_MC} = {math.sqrt(N_MC):.2f}；"
+      f"σ ÷ √n = {sigma_3 / math.sqrt(N_MC):.4f}（正文 0.38 ÷ 54.8 ≈ 0.007）")
+check("0.007 的来历：第 3 格单个回合的 σ ≈ 0.38，√3000 ≈ 54.8，0.38 ÷ 54.8 → 0.007",
+      round(sigma_3, 2) == 0.38 and round(math.sqrt(3000), 1) == 54.8 and round(0.38 / 54.8, 3) == 0.007
+      and math.isclose(se_mc[3], sigma_3 / math.sqrt(N_MC)))
 
 # ---------------------------------------------------------------------------
 banner("1b. 画图：figures/ch10_mc_value.png（一个回合一个回报 → 很多回合取平均）")
@@ -194,6 +206,14 @@ print(f"20% 摔倒：0.8 × (0.1 + 0.9 × 2) + 0.2 × (0.1 + 0.9 × 0) = 0.8 × 
 check("贝尔曼期望 0.8 × (0.1 + 0.9 × 2) + 0.2 × 0.1 = 1.54", math.isclose(V_jia_risky, 1.54))
 check("字面值：0.8 × 1.9 = 1.52，0.2 × 0.1 = 0.02，1.52 + 0.02 = 1.54",
       math.isclose(0.8 * 1.9, 1.52) and math.isclose(0.2 * 0.1, 0.02) and math.isclose(1.52 + 0.02, 1.54))
+# 推导的第三步：右边拆成两堆——奖励的平均 + 0.9 × 以后的回报的平均
+mean_r_jia = P_REACH * 0.1 + (1 - P_REACH) * 0.1
+mean_later_jia = P_REACH * V_yi + (1 - P_REACH) * 0
+print(f"拆成两堆：奖励的平均 {mean_r_jia:g}，以后的回报的平均 0.8 × 2 + 0.2 × 0 = {mean_later_jia:g}，"
+      f"{mean_r_jia:g} + 0.9 × {mean_later_jia:g} = {mean_r_jia + GAMMA * mean_later_jia:g}")
+check("拆成两堆：0.8 × 0.1 + 0.2 × 0.1 = 0.1；0.8 × 2 + 0.2 × 0 = 1.6；0.1 + 0.9 × 1.6 = 0.1 + 1.44 = 1.54，和分两种未来算的一样",
+      math.isclose(mean_r_jia + GAMMA * mean_later_jia, V_jia_risky) and math.isclose(0.8 * 0.1 + 0.2 * 0.1, 0.1)
+      and math.isclose(0.8 * 2 + 0.2 * 0, 1.6) and math.isclose(0.9 * 1.6, 1.44) and math.isclose(0.1 + 1.44, 1.54))
 N_TWO_MC = 20000
 rng_two = np.random.default_rng(2)
 G_two_samples = np.where(rng_two.uniform(size=N_TWO_MC) < P_REACH, 0.1 + GAMMA * 2, 0.1)
@@ -209,11 +229,30 @@ p_left = 1 - p_right
 print(f"\n走廊里实际往右走一格：{P_RIGHT:g} × {1 - SLIP:g} + {1 - P_RIGHT:g} × {SLIP:g} = {p_right:.2f}；实际往左：{p_left:.2f}")
 check("字面值：0.7 × 0.8 + 0.3 × 0.2 = 0.56 + 0.06 = 0.62", math.isclose(0.7 * 0.8 + 0.3 * 0.2, 0.62))
 check(f"实际往右 {p_right:.2f}、往左 {p_left:.2f}（正文的 0.62、0.38）", math.isclose(p_right, 0.62) and math.isclose(p_left, 0.38))
+# 第 3 格的四种情况：策略选哪边 × 地面照办还是打滑（正文 10.2 节的四行表）
+branches = [(a_name, pa * pm, next_cell(3, move))
+            for a_name, a, pa in (("向右", +1, P_RIGHT), ("向左", -1, 1 - P_RIGHT))
+            for move, pm in ((a, 1 - SLIP), (-a, SLIP))]
+print("第 3 格的四种情况（选了 / 两个概率相乘 / 实际走到）：" + "；".join(f"{n} {p:.2f} → 第 {s2} 格" for n, p, s2 in branches))
+check("四行表：0.7 × 0.8 = 0.56，0.7 × 0.2 = 0.14，0.3 × 0.8 = 0.24，0.3 × 0.2 = 0.06，加起来是 1；到终点 0.56 + 0.06 = 0.62，到第 2 格 0.14 + 0.24 = 0.38",
+      [round(p, 2) for _, p, _ in branches] == [0.56, 0.14, 0.24, 0.06] and [s2 for _, _, s2 in branches] == [GOAL, 2, 2, GOAL]
+      and math.isclose(sum(p for _, p, _ in branches), 1.0) and math.isclose(0.7 * 0.2, 0.14) and math.isclose(0.3 * 0.8, 0.24)
+      and math.isclose(0.56 + 0.14 + 0.24 + 0.06, 1.0) and math.isclose(0.56 + 0.06, 0.62) and math.isclose(0.14 + 0.24, 0.38))
 
 
 def bellman_rhs(V, s):
     right, left = next_cell(s, +1), next_cell(s, -1)
     return p_right * (reward_into(right) + GAMMA * V[right]) + p_left * (reward_into(left) + GAMMA * V[left])
+
+
+def bellman_full(V, s):
+    """完整写法 Σ_a π(a|s) Σ_s' P(s'|s,a)[r + γV(s')]：两层 for 循环，四行表一行一行加，不先合并。"""
+    total = 0.0
+    for a, pa in ((+1, P_RIGHT), (-1, 1 - P_RIGHT)):               # 外层 Σ：策略选哪边
+        for move, p in ((a, 1 - SLIP), (-a, SLIP)):                # 里层 Σ：地面照办还是打滑
+            s2 = next_cell(s, move)
+            total += pa * p * (reward_into(s2) + GAMMA * V[s2])
+    return total
 
 
 rows = [[s, V_exact[s], bellman_rhs(V_exact, s)] for s in range(GOAL)]
@@ -227,6 +266,19 @@ check("字面值：0.62 × (1 + 0.9 × 0) + 0.38 × (−0.05 + 0.9 × 0.460) = 0
 check("字面值逐步：0.9 × 0.460 = 0.414，−0.05 + 0.414 = 0.364，0.38 × 0.364 = 0.13832，0.62 + 0.13832 = 0.75832",
       math.isclose(0.9 * 0.460, 0.414) and math.isclose(-0.05 + 0.414, 0.364) and math.isclose(0.38 * 0.364, 0.13832)
       and math.isclose(0.62 + 0.13832, 0.75832))
+check(f"0.75832 和精确值 {V_exact[3]:.5f} 只在第四位往后差一点（0.460 是四舍五入过的），3 位小数都是 0.758",
+      abs(0.75832 - V_exact[3]) < 0.0005 and round(float(V_exact[3]), 3) == 0.758 and round(0.75832, 3) == 0.758)
+# 拆成两堆再算第 3 格：这一步奖励的平均 + 0.9 × 下一格价值的平均
+mean_r_3 = p_right * reward_into(GOAL) + p_left * reward_into(2)
+mean_next_3 = p_right * V_exact[GOAL] + p_left * V_exact[2]
+print(f"第 3 格拆成两堆：奖励的平均 {mean_r_3:.3f}，下一格价值的平均 {mean_next_3:.4f}，{mean_r_3:.3f} + 0.9 × {mean_next_3:.4f} = {mean_r_3 + GAMMA * mean_next_3:.4f}")
+check("第 3 格拆成两堆：0.62 × 1 + 0.38 × (−0.05) = 0.62 − 0.019 = 0.601；0.62 × 0 + 0.38 × 0.460 = 0.1748；0.601 + 0.9 × 0.1748 = 0.601 + 0.15732 = 0.75832",
+      math.isclose(mean_r_3 + GAMMA * mean_next_3, V_exact[3]) and round(mean_r_3, 3) == 0.601 and math.isclose(0.62 * 1 + 0.38 * -0.05, 0.601)
+      and math.isclose(0.38 * 0.05, 0.019) and math.isclose(0.62 * 0 + 0.38 * 0.460, 0.1748) and math.isclose(0.9 * 0.1748, 0.15732)
+      and math.isclose(0.601 + 0.15732, 0.75832))
+check("完整写法（两层 Σ，四行一行一行加）和先并成 0.62、0.38 再算，每一格都一样",
+      all(math.isclose(bellman_full(V_exact, s), bellman_rhs(V_exact, s)) for s in range(GOAL))
+      and all(math.isclose(bellman_full(np.arange(N, dtype=float), s), bellman_rhs(np.arange(N, dtype=float), s)) for s in range(GOAL)))
 
 # 反复代入：先全填 0；每一遍都用上一遍的数，把第 0–3 格按贝尔曼方程重算一次（终点永远是 0）
 N_SWEEPS = 300
@@ -247,6 +299,23 @@ check("字面值：第 2 遍第 2 格 0.62 × (−0.05 + 0.9 × 0.601) + 0.38 ×
 check("字面值：−0.05 + 0.9 × 0.601 = 0.4909，0.62 × 0.4909 − 0.38 × 0.095 = 0.304358 − 0.0361 ≈ 0.268",
       math.isclose(-0.05 + 0.9 * 0.601, 0.4909) and math.isclose(0.62 * 0.4909, 0.304358) and math.isclose(0.38 * 0.095, 0.0361)
       and round(0.304358 - 0.0361, 3) == 0.268)
+check("字面值逐步：0.9 × 0.601 = 0.5409，−0.05 + 0.5409 = 0.4909；−0.05 − 0.045 = −0.095；0.304358 − 0.0361 = 0.268258；"
+      "第 0–2 格第 1 遍：(0.62 + 0.38) × (−0.05) = −0.05",
+      math.isclose(0.9 * 0.601, 0.5409) and math.isclose(-0.05 + 0.5409, 0.4909) and math.isclose(-0.05 - 0.045, -0.095)
+      and math.isclose(0.304358 - 0.0361, 0.268258) and math.isclose(0.62 * -0.05 + 0.38 * -0.05, (0.62 + 0.38) * -0.05)
+      and math.isclose((0.62 + 0.38) * -0.05, -0.05))
+# 起步填的不是 0，也收敛到同一个答案
+other_starts = {"全 1": np.ones(N), "乱填": np.array([5.0, -3.0, 2.0, 7.0, 0.0])}
+other_ends = {}
+for name, start in other_starts.items():
+    W = start.copy()
+    W[GOAL] = 0.0                                             # 终点永远是 0
+    for _ in range(N_SWEEPS):
+        W = np.array([bellman_rhs(W, s) for s in range(GOAL)] + [0.0])
+    other_ends[name] = W
+print("起步不填 0：" + "；".join(f"从{name}起步代 {N_SWEEPS} 遍 → {np.round(W[:GOAL], 3).tolist()}" for name, W in other_ends.items()))
+check(f"从全 1、从乱填的数起步各代 {N_SWEEPS} 遍，和从全 0 起步的结果一模一样（相差不到 1e-9）",
+      all(np.max(np.abs(W - sweeps[-1])) < 1e-9 for W in other_ends.values()))
 check("自测：折扣改成 0.5，甲 = 0.1 + 0.5 × 2 = 1.1", math.isclose(0.1 + 0.5 * 2, 1.1))
 check("第 k 遍（k = 1…4），离终点 k 格的那一格第一次变大；比它更远的格子还在变小",
       all(sweeps[k][GOAL - k] > sweeps[k - 1][GOAL - k] and all(sweeps[k][s] < sweeps[k - 1][s] for s in range(GOAL - k))
@@ -287,11 +356,43 @@ check(f"第 k 遍 = 最多再走 k 步的平均回报：最多走 4 步的抽样
       abs(cut_returns.mean() - sweeps[4][0]) < tol_cut)
 check("第 1 遍就是“最多走一步”：第 3 格 0.62 × 1 + 0.38 × (−0.05) = 0.601；第 0–2 格一步够不着终点，都是 −0.05（自测 ③）",
       math.isclose(0.62 * 1 + 0.38 * -0.05, 0.601) and np.allclose(sweeps[1][:GOAL], [-0.05, -0.05, -0.05, 0.601]))
+# 第 2 遍第 2 格 = 从第 2 格出发、最多走两步的平均回报：把两步的走法全列出来
+two_step_paths = []                                       # (第一步走到哪, 第二步走到哪, 概率, 这两步的回报)
+for s1, p1 in ((next_cell(2, +1), p_right), (next_cell(2, -1), p_left)):
+    r1 = reward_into(s1)
+    if s1 == GOAL:
+        two_step_paths.append((s1, None, p1, r1))
+        continue
+    for s2, p2 in ((next_cell(s1, +1), p_right), (next_cell(s1, -1), p_left)):
+        two_step_paths.append((s1, s2, p1 * p2, r1 + GAMMA * reward_into(s2)))
+two_step_mean = sum(p * g for _, _, p, g in two_step_paths)
+print("从第 2 格出发、最多走两步：" + "；".join(f"第 {a} 格 → {'终点' if b == GOAL else f'第 {b} 格'}：概率 {p:.4f}，回报 {g:g}"
+                                          for a, b, p, g in two_step_paths) + f"；加权 = {two_step_mean:.6f}")
+check(f"第 2 遍第 2 格 = 最多走两步的平均回报：把两步的走法全列出来加权，得 {two_step_mean:.6f}，和第 2 遍的 {sweeps[2][2]:.6f} 一样",
+      math.isclose(two_step_mean, sweeps[2][2]))
+check("三种走法（字面值）：0.62 × 0.62 = 0.3844、0.62 × 0.38 = 0.2356、0.38 × (0.62 + 0.38) = 0.38；回报 −0.05 + 0.9 × 1 = 0.85、"
+      "−0.05 + 0.9 × (−0.05) = −0.095；0.3844 × 0.85 + 0.2356 × (−0.095) + 0.38 × (−0.095) = 0.32674 − 0.022382 − 0.0361 = 0.268258",
+      math.isclose(0.62 * 0.62, 0.3844) and math.isclose(0.62 * 0.38, 0.2356) and math.isclose(0.38 * (0.62 + 0.38), 0.38)
+      and math.isclose(-0.05 + 0.9 * 1, 0.85) and math.isclose(-0.05 + 0.9 * -0.05, -0.095) and math.isclose(0.3844 * 0.85, 0.32674)
+      and math.isclose(0.2356 * 0.095, 0.022382) and math.isclose(0.38 * 0.095, 0.0361)
+      and math.isclose(0.32674 - 0.022382 - 0.0361, 0.268258) and round(0.268258, 3) == 0.268)
 check(f"收敛的道理：γ^30 = {GAMMA ** 30:.3f}，γ^60 = {GAMMA ** 60:.4f} = 0.042 × 0.042（往后的步子能加进来的分越来越少）",
       round(GAMMA ** 30, 3) == 0.042 and round(GAMMA ** 60, 4) == 0.0018 and round(0.042 * 0.042, 4) == 0.0018)
+# 第 k 遍离真值不超过 γ^k × 1/(1 − γ)：第 k 步以后的分，每步最多 1 分，打折后全加起来也不超过它
+gap_k = [float(np.max(np.abs(sweeps[k] - V_exact))) for k in range(len(sweeps))]
+bound_k = [GAMMA ** k / (1 - GAMMA) for k in range(len(sweeps))]
+print(f"第 k 遍离精确值最远的一格：第 30 遍 {gap_k[30]:.6f}（上限 {bound_k[30]:.3f}），第 100 遍 {gap_k[100]:.1e}（上限 {bound_k[100]:.6f}）")
+check(f"每一遍离精确值都不超过 γ^k × 1/(1 − γ)（γ = {GAMMA:g}：1 ÷ (1 − 0.9) = 10）；第 100 遍的上限 0.0000266 × 10 = 0.000266",
+      all(g <= b + 1e-12 for g, b in zip(gap_k, bound_k)) and math.isclose(1 / (1 - 0.9), 10)
+      and round(0.9 ** 100, 7) == 0.0000266 and math.isclose(0.0000266 * 10, 0.000266) and round(0.9 ** 100, 5) == 0.00003
+      and gap_k[30] < 0.001 < bound_k[30])
 # 两套设定的差距（正文 10.2 节末尾）
-check(f"同一个第 0 格：本章 {V_exact[0]:.3f}，第 9 章的设定 {V_ch09[0]:.4f}，差约五倍",
-      4.5 < V_ch09[0] / V_exact[0] < 5.5)
+check(f"同一个第 0 格：本章 {V_exact[0]:.3f}，第 9 章的设定 {V_ch09[0]:.4f}，差约五倍（字面值 0.7015 ÷ 0.140 → 5.0）",
+      4.5 < V_ch09[0] / V_exact[0] < 5.5 and round(0.7015 / 0.140, 1) == 5.0)
+V_ch09_nolimit = sweep_values(1.0, 0.99, 5000)           # 不设 50 步上限：一直代到不再变
+print(f"第 9 章的设定、不设 50 步上限（代 5000 遍）：第 0 格 = {V_ch09_nolimit[0]:.4f}，和代 50 遍差 {abs(V_ch09_nolimit[0] - V_ch09[0]):.1e}")
+check("第三处设定（50 步上限）几乎不起作用：不设上限，第 0 格还是 0.7015，和代 50 遍差不到 0.0000001",
+      round(float(V_ch09_nolimit[0]), 4) == 0.7015 and abs(V_ch09_nolimit[0] - V_ch09[0]) < 1e-7)
 check("字面值：0.9² = 0.81，0.81² = 0.6561（γ = 0.9 时四步后的 +1）；0.99⁴ = 0.9606",
       math.isclose(0.9 ** 2, 0.81) and math.isclose(0.81 ** 2, 0.6561) and round(0.99 ** 4, 4) == 0.9606)
 
@@ -306,6 +407,8 @@ check("差得最多的是第 1 格：0.265 − 0.255 = 0.010", int(np.argmax(np.
 ratio_1 = float(abs(V_mc[1] - V_exact[1]) / se_mc[1])
 check(f"第 1 格的差是它 σ/√n 的 {ratio_1:.2f} 倍，约一倍半（字面值 0.010 ÷ 0.007 = {0.010 / 0.007:.2f}）",
       1.3 < ratio_1 < 1.7 and 1.3 < 0.010 / 0.007 < 1.7)
+check("正文的两种说法：拿印出来的数按 0.010 ÷ 0.007 → 1.4；没舍入之前 → 1.5",
+      round(0.010 / 0.007, 1) == 1.4 and round(ratio_1, 1) == 1.5)
 
 # ---------------------------------------------------------------------------
 banner("2b. 画图：figures/ch10_bellman_ledger.png（两格的账 → 按概率加权 → 走廊的一格）")
@@ -392,6 +495,14 @@ print(f"TD 目标 = 0.1 + 0.9 × 1.5 = {td_target:g}；δ = {td_target:g} − 1.
 check("一次 TD 更新：1 + 0.1 × (0.1 + 0.9 × 1.5 − 1) = 1.045", math.isclose(new_jia, 1.045))
 check("字面值：0.1 + 0.9 × 1.5 = 1.45，1.45 − 1.0 = 0.45，1.0 + 0.1 × 0.45 = 1.045",
       math.isclose(0.1 + 0.9 * 1.5, 1.45) and math.isclose(1.45 - 1.0, 0.45) and math.isclose(1.0 + 0.1 * 0.45, 1.045))
+check("字面值逐步：0.9 × 1.5 = 1.35，0.1 + 1.35 = 1.45；0.1 × 0.45 = 0.045，1.0 + 0.045 = 1.045",
+      math.isclose(0.9 * 1.5, 1.35) and math.isclose(0.1 + 1.35, 1.45) and math.isclose(0.1 * 0.45, 0.045) and math.isclose(1.0 + 0.045, 1.045))
+# 只挪一成 = 第 7 章 7.4 节的滑动平均：新平均 = 0.9 × 旧平均 + 0.1 × 今天（今天 = 这一次的 TD 目标）
+ema_form = (1 - ALPHA_HAND) * est_jia + ALPHA_HAND * td_target
+print(f"换成滑动平均的写法：0.9 × 1.0 + 0.1 × {td_target:g} = {ema_form:g}（和 1.0 + 0.1 × ({td_target:g} − 1.0) 一样）")
+check("滑动平均的写法：1.0 + 0.1 × (1.45 − 1.0) = 0.9 × 1.0 + 0.1 × 1.45 = 0.9 + 0.145 = 1.045；九成 = 全部减一成：0.9 × 1.0 = 1.0 − 0.1 × 1.0",
+      math.isclose(ema_form, new_jia) and math.isclose(1.0 + 0.1 * (1.45 - 1.0), 0.9 * 1.0 + 0.1 * 1.45)
+      and math.isclose(0.1 * 1.45, 0.145) and math.isclose(0.9 + 0.145, 1.045) and math.isclose(0.9 * 1.0, 1.0 - 0.1 * 1.0))
 
 # 回到确定的路线 甲 → 乙 → 终点，反复走：每一回合先修甲、再修乙
 N_TWO = 80
@@ -411,6 +522,18 @@ check("自测：第 3 回合 0.1 + 0.9 × 1.595 = 1.5355，1.5355 − 1.09 = 0.4
       and math.isclose(1.5355 - 1.09, 0.4455) and math.isclose(1.09 + 0.1 * 0.4455, 1.13455))
 check("甲的 TD 目标一开始偏低（1.45 < 真值 1.9），之后回合回合往上走", two_rows[1][1] < 1.9 and
       all(two_rows[k + 1][1] > two_rows[k][1] for k in range(1, N_TWO)))
+check("第 1 回合乙：1.5 + 0.1 × (2 − 1.5) = 1.5 + 0.05 = 1.55",
+      math.isclose(two_rows[1][3], 1.55) and math.isclose(1.5 + 0.1 * (2 - 1.5), 1.55) and math.isclose(0.1 * 0.5, 0.05))
+# 乙的靶子永远是 2：每个回合只补上差距的一成，差距乘 1 − α = 0.9
+print(f"乙离 2 的差距：第 1 回合 {2 - two_rows[1][3]:.3f}，第 2 回合 {2 - two_rows[2][3]:.4f}，第 10 回合 {2 - two_rows[10][3]:.4f}，"
+      f"第 30 回合 {2 - two_rows[30][3]:.4f}——每回合乘 {1 - ALPHA_HAND:g}")
+check("乙离 2 的差距每回合乘 0.9：第 k 回合乙 = 2 − 0.5 × 0.9^k（0.5 → 0.45 → 0.405……）",
+      all(math.isclose(two_rows[k][3], 2 - (2 - est_yi) * (1 - ALPHA_HAND) ** k) for k in range(N_TWO + 1))
+      and math.isclose(0.5 * 0.9, 0.45) and math.isclose(0.45 * 0.9, 0.405))
+check("字面值：0.9¹⁰ → 0.3487，0.5 × 0.3487 → 0.174，2 − 0.174 = 1.826；0.5 × 0.042 = 0.021，2 − 0.021 = 1.979（表里的 1.826、1.979）",
+      round(0.9 ** 10, 4) == 0.3487 and round(0.5 * 0.3487, 3) == 0.174 and math.isclose(2 - 0.174, 1.826)
+      and math.isclose(0.5 * 0.042, 0.021) and math.isclose(2 - 0.021, 1.979)
+      and round(two_rows[10][3], 3) == 1.826 and round(two_rows[30][3], 3) == 1.979)
 check(f"走 {N_TWO} 个回合：乙的估计离 2 不到 0.001，甲的估计离 1.9 不到 0.01",
       abs(two["乙"] - 2) < 1e-3 and abs(two["甲"] - 1.9) < 1e-2)
 
@@ -421,14 +544,18 @@ N_TD = 4000
 
 def run_td(alpha, seed, n_ep=N_TD):
     """走廊上从全 0 开始做 TD。返回：每个回合结束时记下的估计（第 0 行是开始前）、
-    后一半回合里“每走一步记一次”的平均，以及有几个回合是走进终点结束的。"""
+    后一半回合里“每走一步记一次”的平均、有几个回合是走进终点结束的，
+    以及后一半回合里“站在第 0 格、正要修它”的那些时刻，第 1 格的估计取平均（进阶块的第二份偏差用）。"""
     rng = np.random.default_rng(seed)
     V = np.zeros(N)
     ends, step_sum, step_count, n_finished = [V.copy()], np.zeros(N), 0, 0
+    v1_at0 = []
     for ep in range(n_ep):
         s = int(rng.integers(0, GOAL))                      # 每个回合从 0–3 格里随便挑一格出发
         for _ in range(200):                                # 200 步只是保险，实际远远用不到（下面核对）
             s2, r, finished = step(s, policy(rng), rng)
+            if ep >= n_ep // 2 and s == 0:
+                v1_at0.append(V[1])                         # 修第 0 格之前，第 1 格此刻的估计
             target = r + (0.0 if finished else GAMMA * V[s2])  # 进了终点，下一格的价值记 0
             V[s] += alpha * (target - V[s])                    # 往 TD 目标挪 α 那么多
             s = s2
@@ -439,10 +566,11 @@ def run_td(alpha, seed, n_ep=N_TD):
                 n_finished += 1
                 break
         ends.append(V.copy())                               # 回合刚结束时记一次：下面的表、图都用它
-    return np.array(ends), step_sum / step_count, n_finished
+    v1_at0_mean = float(np.mean(v1_at0)) if v1_at0 else float("nan")
+    return np.array(ends), step_sum / step_count, n_finished, v1_at0_mean
 
 
-trace, step_mean, n_finished = run_td(ALPHA_TD, 1)
+trace, step_mean, n_finished, _ = run_td(ALPHA_TD, 1)
 tail_mean = trace[N_TD // 2:].mean(axis=0)                  # 后一半回合（第 2000 个回合以后）结束时记下的估计，取平均
 first_positive = [int(np.argmax(trace[:, s] > 0)) for s in range(GOAL)]
 SHOW_TD = [1, 10, 100, 1000, 4000]
@@ -460,6 +588,29 @@ check("正文引用：后一半的平均 0.120、0.250、0.474、0.785；第 3 �
       [round(float(v), 3) for v in tail_mean[:GOAL]] == [0.120, 0.250, 0.474, 0.785]
       and round(float(tail_mean[3] - V_exact[3]), 3) == 0.027 and round(float(tail_mean[0] - V_exact[0]), 3) == -0.020
       and math.isclose(0.785 - 0.758, 0.027) and math.isclose(0.120 - 0.140, -0.020))
+# 晃是怎么来的：就算四格恰好等于精确值，从第 3 格走一步也一定被拉开；可按概率平均，上拉和下拉正好抵消
+up_3 = ALPHA_TD * (1 + GAMMA * 0 - V_exact[3])                     # 62%：走进终点，TD 目标 1
+target_slip_3 = STEP_REWARD + GAMMA * V_exact[2]                    # 38%：打滑退到第 2 格
+down_3 = ALPHA_TD * (target_slip_3 - V_exact[3])
+mean_target_3 = p_right * 1 + p_left * target_slip_3
+v3_shown = round(float(V_exact[3]), 3)                              # 正文按 3 位小数写的 0.758
+print(f"\n估计恰好等于精确值时，第 3 格走一步（α = {ALPHA_TD:g}）：进终点 {up_3:+.4f}，{v3_shown:g} + {up_3:.4f} = {v3_shown + round(up_3, 4):.4f}；"
+      f"打滑（TD 目标 {target_slip_3:.3f}）{down_3:+.4f}，{v3_shown:g} − {abs(down_3):.4f} = {v3_shown + round(down_3, 4):.4f}；"
+      f"按 {p_right:.2f}、{p_left:.2f} 平均 {p_right * up_3 + p_left * down_3:+.1e}；TD 目标的平均 {mean_target_3:.5f}")
+check(f"站在真值上也会被拉开：进终点往上挪 {up_3:.4f}，打滑往下挪 {abs(down_3):.4f}（α = {ALPHA_TD:g}）；按概率平均正好是 0，"
+      f"TD 目标的平均就是贝尔曼方程的右边 {V_exact[3]:.4f}",
+      round(up_3, 4) == 0.0242 and round(down_3, 4) == -0.0394 and round(target_slip_3, 3) == 0.364
+      and abs(p_right * up_3 + p_left * down_3) < 1e-12 and math.isclose(mean_target_3, V_exact[3]))
+check("字面值：δ = 1 − 0.758 = 0.242，0.1 × 0.242 = 0.0242，0.758 + 0.0242 = 0.7822；−0.05 + 0.414 = 0.364，0.364 − 0.758 = −0.394，"
+      "0.1 × 0.394 = 0.0394，0.758 − 0.0394 = 0.7186；0.62 × 0.0242 → 0.0150，0.38 × 0.0394 → 0.0150；0.62 × 1 + 0.38 × 0.364 = 0.62 + 0.13832 = 0.75832",
+      math.isclose(1 - 0.758, 0.242) and math.isclose(0.1 * 0.242, 0.0242) and math.isclose(0.758 + 0.0242, 0.7822)
+      and math.isclose(-0.05 + 0.414, 0.364) and math.isclose(0.364 - 0.758, -0.394) and math.isclose(0.1 * 0.394, 0.0394)
+      and math.isclose(0.758 - 0.0394, 0.7186) and round(0.62 * 0.0242, 4) == 0.0150 and round(0.38 * 0.0394, 4) == 0.0150
+      and math.isclose(0.62 * 1 + 0.38 * 0.364, 0.75832) and math.isclose(0.62 + 0.13832, 0.75832))
+check("滑动平均的记性：最近 10 次占 1 − 0.9¹⁰ → 0.651（第 7 章 7.4 节）", round(1 - 0.9 ** 10, 3) == 0.651)
+check("α = 0.01：那一步只挪 0.01 × 0.242 = 0.00242 或 0.01 × 0.394 = 0.00394；差距每回合乘 0.99，10 回合剩 0.99¹⁰ → 0.904（α = 0.1 时 0.9¹⁰ → 0.349）",
+      math.isclose(0.01 * 0.242, 0.00242) and math.isclose(0.01 * 0.394, 0.00394) and round(0.99 ** 10, 3) == 0.904
+      and round(0.9 ** 10, 3) == 0.349)
 # 为什么平均起来还偏一点（正文的进阶块）
 pull = ALPHA_TD * (1 - V_exact[3])
 print(f"每个回合最后一步都是第 3 格走进终点（{n_finished}/{N_TD} 个回合）：TD 目标 1 把第 3 格往上拉约 "
@@ -478,11 +629,16 @@ for alpha_k, n_ep_k in ((0.1, 4000), (0.05, 8000), (0.025, 16000)):
     tail_k = float(np.mean([r[0][n_ep_k // 2:, 3].mean() for r in runs])) - V_exact[3]
     step_k = float(np.mean([r[1][3] for r in runs])) - V_exact[3]
     zero_k = float(np.mean([r[1][0] for r in runs])) - V_exact[0]
-    ladder.append([alpha_k, n_ep_k, tail_k, step_k, tail_k - step_k, alpha_k * (1 - V_exact[3]), zero_k])
+    v1_at0_k = float(np.mean([r[3] for r in runs]))         # 站在第 0 格时，第 1 格的估计
+    v1_step_k = float(np.mean([r[1][1] for r in runs]))     # 第 1 格每步记的平均
+    ladder.append([alpha_k, n_ep_k, tail_k, step_k, tail_k - step_k, alpha_k * (1 - V_exact[3]), zero_k,
+                   v1_at0_k, v1_step_k, v1_at0_k - v1_step_k])
 print("\nα 换三档（每档 3 组随机数取平均），两份偏差一起缩：")
 table(["α", "回合数", "第 3 格回合末记", "第 3 格每步记", "两者之差", "α × (1 − 0.758)"],
       [row[:6] for row in ladder], floatfmt=".3f")
 print("第 0 格“每步记”的偏差：" + "、".join(f"{row[6]:+.3f}" for row in ladder))
+print("站在第 0 格时第 1 格的估计 / 第 1 格每步记的平均 / 差：" + "；".join(
+    f"α = {row[0]:g}：{row[7]:.3f} / {row[8]:.3f} / {row[9]:+.3f}" for row in ladder))
 check("“什么时候看”那一份 ≈ α × (1 − 0.758)：三档都差不到 0.003，且随 α 一起缩小",
       all(abs(row[4] - row[5]) < 0.003 for row in ladder)
       and ladder[0][4] > ladder[1][4] > ladder[2][4] > 0)
@@ -496,6 +652,13 @@ check(f"正文引用的三行：第 3 格回合末记 {'、'.join(f'{r[2]:.3f}' 
       and [round(r[4], 3) for r in ladder] == [0.022, 0.010, 0.005]
       and [round(r[5], 3) for r in ladder] == [0.024, 0.012, 0.006]
       and [round(r[6], 3) for r in ladder] == [-0.018, -0.010, -0.003])
+check("第二份偏差的来头：站在第 0 格的时刻，第 1 格的估计总比它每步记的平均低，而且 α 越小差得越少",
+      all(row[9] < 0 for row in ladder) and abs(ladder[0][9]) > abs(ladder[1][9]) > abs(ladder[2][9]))
+check(f"正文引用（α = 0.1）：站在第 0 格时第 1 格平均 {ladder[0][7]:.3f}，每步记 {ladder[0][8]:.3f}，低 {abs(ladder[0][9]):.3f}；"
+      f"三档的差 {'、'.join(f'{abs(r[9]):.3f}' for r in ladder)}；−0.05 + 0.9 × 0.140 = 0.076；0.018 ÷ 0.003 = 6",
+      round(ladder[0][7], 3) == 0.230 and round(ladder[0][8], 3) == 0.244 and round(abs(ladder[0][9]), 3) == 0.014
+      and [round(abs(r[9]), 3) for r in ladder] == [0.014, 0.007, 0.004]
+      and math.isclose(-0.05 + 0.9 * 0.140, 0.076) and math.isclose(0.018 / 0.003, 6))
 
 seed_gaps = [float(run_td(ALPHA_TD, sd)[0][N_TD // 2:, 3].mean() - V_exact[3]) for sd in range(2, 12)]
 print(f"换 10 组随机数重跑（α = {ALPHA_TD:g}），第 3 格后一半的平均减精确值：" + "  ".join(f"{g:+.3f}" for g in seed_gaps))
@@ -572,6 +735,19 @@ check("优势：向右 2 − 1.5 = +0.5，向左 0 − 1.5 = −1.5", math.isclo
 check("按策略加权的优势均值 0.75 × 0.5 + 0.25 × (−1.5) = 0.375 − 0.375 = 0", abs(mean_A_here) < 1e-12
       and abs(0.75 * 0.5 + 0.25 * -1.5) < 1e-12 and math.isclose(0.75 * 0.5, 0.375) and math.isclose(0.25 * 1.5, 0.375))
 check("不加权、直接相加不是 0：0.5 + (−1.5) = −1", math.isclose(0.5 + -1.5, -1.0))
+# V 为什么是 Q 按策略的平均：100 个回合按第一步选了哪个动作分成两堆
+n_right_here = 100 * PI_RIGHT_HERE
+pile_total = n_right_here * Q_here["向右"] + (100 - n_right_here) * Q_here["向左"]
+print(f"分两堆数一数：100 个回合里约 {n_right_here:g} 个先向右（合计 {n_right_here:g} × 2 = {n_right_here * 2:g}），"
+      f"{100 - n_right_here:g} 个先向左（合计 0）；平均 {pile_total:g} ÷ 100 = {pile_total / 100:g}")
+check(f"分两堆：先分堆求平均、再按每堆占几成加权（{pile_total:g} ÷ 100 = {pile_total / 100:g}），和 V 是同一个数",
+      math.isclose(pile_total / 100, V_here))
+check("字面值：75 × 2 = 150，(150 + 0) ÷ 100 = 1.5 = 0.75 × 2 + 0.25 × 0",
+      75 * 2 == 150 and (150 + 0) / 100 == 1.5 and math.isclose(0.75 * 2 + 0.25 * 0, 1.5))
+check("字面值（优势平均为 0，拆两堆）：0.75 × (2 − 1.5) + 0.25 × (0 − 1.5) = (0.75 × 2 + 0.25 × 0) − (0.75 + 0.25) × 1.5 = 1.5 − 1 × 1.5 = 0",
+      math.isclose(0.75 * (2 - 1.5) + 0.25 * (0 - 1.5), (0.75 * 2 + 0.25 * 0) - (0.75 + 0.25) * 1.5)
+      and math.isclose((0.75 * 2 + 0.25 * 0) - (0.75 + 0.25) * 1.5, 0.0, abs_tol=1e-12)
+      and math.isclose(0.75 * (2 - 1.5), 0.75 * 2 - 0.75 * 1.5))
 
 Q_push = {"迈一步稳住": -1.0, "硬扛不动": -5.0}          # 被推了一把：怎么做都要扣分
 V_push = 0.5 * Q_push["迈一步稳住"] + 0.5 * Q_push["硬扛不动"]
@@ -621,6 +797,12 @@ check("字面值：−0.05 + 0.9 × 0.758 − 0.460 = 0.1722；−0.05 + 0.9 × 
       math.isclose(-0.05 + 0.9 * 0.758 - 0.460, 0.1722) and math.isclose(-0.05 + 0.9 * 0.255 - 0.460, -0.2805)
       and math.isclose(0.8 * 0.1722, 0.13776) and math.isclose(0.2 * -0.2805, -0.0561)
       and math.isclose(0.13776 - 0.0561, 0.08166) and round(0.08166, 3) == 0.082)
+check("中间步：−0.05 + 0.6822 − 0.460 = 0.1722，−0.05 + 0.2295 − 0.460 = −0.2805；拆两堆："
+      "0.8 × (0.6322 − 0.460) + 0.2 × (0.1795 − 0.460) = (0.8 × 0.6322 + 0.2 × 0.1795) − (0.8 + 0.2) × 0.460 = 0.54166 − 0.460 = 0.08166",
+      math.isclose(-0.05 + 0.6822 - 0.460, 0.1722) and math.isclose(-0.05 + 0.2295 - 0.460, -0.2805)
+      and math.isclose(0.8 * (0.6322 - 0.460) + 0.2 * (0.1795 - 0.460), (0.8 * 0.6322 + 0.2 * 0.1795) - (0.8 + 0.2) * 0.460)
+      and math.isclose(0.8 * 0.6322 + 0.2 * 0.1795, 0.54166) and math.isclose(0.54166 - 0.460, 0.08166)
+      and math.isclose((1 - SLIP) * delta_ok + SLIP * delta_slip, Q2[+1] - V2))
 
 # ---------------------------------------------------------------------------
 banner("4b. 画图：figures/ch10_q_advantage.png（Q 的条形、V 的虚线，优势 = 两者之差）")
@@ -735,6 +917,16 @@ check("导数 2 × (1.0 − 1.45) = −0.9，缩 h 量出来一样", math.isclos
 check("学习率 0.05 走一步：1.0 − 0.05 × (−0.9) = 1.045，和 10.3 节 α = 0.1 的 TD 更新同一个数",
       math.isclose(v1, 1.045) and math.isclose(v1, new_jia) and math.isclose(0.05 * 0.9, 0.045) and math.isclose(1.0 + 0.045, 1.045))
 check("对得上的原因：平方的导数多出一个 2，0.05 × 2 = 0.1 = α", math.isclose(LR * 2, ALPHA_HAND))
+loss_nudged = (v0 + 0.001 - label) ** 2                       # 正文的缩 h：估计从 1.0 拧到 1.001
+print(f"缩 h（正文的写法）：(1.001 − 1.45)² = {loss_nudged:.6f}，损失少了 {loss0 - loss_nudged:.6f}，"
+      f"变化 ÷ 0.001 = {(loss_nudged - loss0) / 0.001:.3f}")
+check("缩 h：(1.001 − 1.45)² = 0.449² = 0.201601，0.2025 − 0.201601 = 0.000899，−0.000899 ÷ 0.001 = −0.899，靠近 −0.9；(−0.45)² = 0.45 × 0.45",
+      math.isclose(loss_nudged, 0.201601) and math.isclose(0.449 ** 2, 0.201601) and math.isclose(0.2025 - 0.201601, 0.000899)
+      and math.isclose(-0.000899 / 0.001, -0.899) and math.isclose((loss_nudged - loss0) / 0.001, -0.899)
+      and math.isclose((-0.45) ** 2, 0.45 * 0.45))
+check("换成文字：估计 − 0.05 × 2 × (估计 − 标签) = 估计 + 0.1 × (标签 − 估计)，换几组数都成立；1.45 − 1.0 = 0.45 = −(1.0 − 1.45)",
+      all(math.isclose(v - LR * 2 * (v - y), v + ALPHA_HAND * (y - v)) for v, y in ((1.0, 1.45), (0.3, -2.0), (5.0, 4.2)))
+      and math.isclose(1.45 - 1.0, -(1.0 - 1.45)))
 if importlib.util.find_spec("torch"):
     import torch
 

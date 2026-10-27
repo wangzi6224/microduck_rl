@@ -63,6 +63,25 @@ def alpha_limit(X) -> float:
     return float(2 / np.linalg.eigvalsh(hessian(X)).max())   # 精确的门槛（w、b 互相牵连，交给机器算）
 
 
+# 正文开头先复习第 3 章 3.6 节的规则：碗 (w − 3)²，从 w = 1、α = 0.1 走一步
+d_old = 1 - 3                                     # 离碗底的距离
+slope_old = 2 * d_old                             # 坡度 = 2 × 距离
+change = -0.1 * slope_old                         # 这一步 w 变 −α × 坡度
+d_new = d_old + change
+print(minus(f"复习第 3 章：(w − 3)² 从 w = 1 走一步（α = 0.1）：距离 {d_old}，坡度 {slope_old}，w 变 +{change:g}，"
+            f"新距离 {d_new:g} = {d_old} × (1 − 2 × 0.1) = {d_old * (1 - 2 * 0.1):g}"))
+check("复习：距离 −2，坡度 −4，w 变 +0.4，新距离 −1.6 = −2 × 0.8；打八折 100 − 0.2 × 100 = 100 × (1 − 0.2) = 80",
+      d_old == -2 and slope_old == -4 and math.isclose(change, 0.4) and math.isclose(d_new, -1.6)
+      and math.isclose(d_old * (1 - 2 * 0.1), -1.6) and math.isclose(100 - 0.2 * 100, 100 * (1 - 0.2)) and 100 * 0.8 == 80)
+check("复习第 3 章 3.6 节那张表：乘 0.8 是 −2 → −1.6 → −1.28；α = 1.5 乘 1 − 3 = −2，−2 → 4 → −8",
+      math.isclose(-2 * 0.8, -1.6) and math.isclose(-1.6 * 0.8, -1.28) and 1 - 2 * 1.5 == -2
+      and -2 * -2 == 4 and 4 * -2 == -8)
+check("复习第 3 章 3.5 节：e 从 7 到 7.01，平方 49 → 49.1401，多 0.1401 ≈ 2 × 7 × 0.01 = 0.14",
+      round(7.01 ** 2, 4) == 49.1401 and round(7.01 ** 2 - 49, 4) == 0.1401 and math.isclose(2 * 7 * 0.01, 0.14))
+check("门槛 = 2 ÷ 陡度：陡度 2 → α < 1；陡度 6（x² + 3y² 的 y 方向）→ 2 ÷ 6 = 1/3；乘数正好落在门槛上时是 −1",
+      2 / 2 == 1 and math.isclose(2 / 6, 1 / 3) and math.isclose(1 - 2 * 1, -1) and math.isclose(1 - 6 * (2 / 6), -1))
+
+
 X_s, Y_s = make_data((-1, 1))
 X_b, Y_b = make_data(X_RANGE)
 mu_b, sd_b = float(X_b.mean()), float(X_b.std())
@@ -83,11 +102,22 @@ check(f"x ∈ {rng_txt}、α = 0.1：100 步后损失 {L_b:.3g}，发散", not n
 
 x_two, y_two = np.array([1.0, 3.0]), np.array([0.5, -1.0])   # 正文的两点手算：w 从 0 拧到 1，∂L/∂w 动多少
 grad_w = lambda w: float(np.mean(2 * (w * x_two + 0.0 - y_two) * x_two))
-print(f"两个点 x = 1、3：w = 0 时 ∂L/∂w = {grad_w(0):g}，w = 1 时 {grad_w(1):g}，差 {grad_w(1) - grad_w(0):g}"
-      f" = 2 × (x² 的平均 {np.mean(x_two ** 2):g})")
+err0, err1 = 0.0 * x_two - y_two, 1.0 * x_two - y_two        # b 按住在 0：w = 0、w = 1 时的误差
+print(f"两个点 x = 1、3（y = 0.5、−1）：w = 0 时误差 {minus(str(err0.tolist()))}、2·e·x {minus(str((2 * err0 * x_two).tolist()))}；"
+      f"w = 1 时误差 {err1.tolist()}、2·e·x {(2 * err1 * x_two).tolist()}")
+print(f"  ∂L/∂w：w = 0 时 {grad_w(0):g}，w = 1 时 {grad_w(1):g}，差 {grad_w(1) - grad_w(0):g}"
+      f" = 2 × (x² 的平均 {np.mean(x_two ** 2):g})；w = −0.25 时 {grad_w(-0.25):g}（碗底）")
+check("两点小表：w = 0 时误差 −0.5、1，2·e·x 是 −1、6，平均 2.5；w = 1 时误差 0.5、4，2·e·x 是 1、24，平均 12.5",
+      np.allclose(err0, [-0.5, 1]) and np.allclose(2 * err0 * x_two, [-1, 6]) and math.isclose(grad_w(0), 2.5)
+      and np.allclose(err1, [0.5, 4]) and np.allclose(2 * err1 * x_two, [1, 24]) and math.isclose(grad_w(1), 12.5)
+      and (-1 + 6) / 2 == 2.5 and (1 + 24) / 2 == 12.5)
 check("两点手算：误差各加 x，这一列各加 2x² = 2 和 18，平均 (2 + 18) ÷ 2 = 10 = 2 × 5",
       math.isclose(grad_w(1) - grad_w(0), 10) and (2 * 1 + 2 * 9) / 2 == 10
       and math.isclose(np.mean(x_two ** 2), (1 + 9) / 2) and np.mean(x_two ** 2) == 5)
+check("第 2 个点：24 − 6 = 2 × 4 × 3 − 2 × 1 × 3 = 2 × (4 − 1) × 3 = 18；2 + 18 = 2 × (1 + 9)",
+      24 - 6 == 2 * 4 * 3 - 2 * 1 * 3 == 2 * (4 - 1) * 3 == 18 and 2 + 18 == 2 * (1 + 9))
+check("碗底在 w = −0.25（∂L/∂w = 0）；站在 w = 0 离碗底 0.25，坡度 2.5 = 10 × 0.25（坡度 = 陡度 × 距离）",
+      abs(grad_w(-0.25)) < 1e-12 and math.isclose(grad_w(0), 10 * 0.25))
 
 m2_s, m2_b = float(np.mean(X_s ** 2)), float(np.mean(X_b ** 2))
 print(f"只看 w：w 动 1，∂L/∂w 动 2 × “x² 的平均”。(−1, 1)：2 × {m2_s:.3f} ≈ {2 * m2_s:.2f}，门槛 ≈ {1 / m2_s:.1f}；"
@@ -96,6 +126,16 @@ print(f"精确的门槛：(−1, 1) 是 {alpha_limit(X_s):.4f}，{rng_txt} 是 {
 check("x² 的平均：0.343 → 34.3（放大 10 倍，平方放大 100 倍）", round(m2_s, 3) == 0.343 and round(m2_b, 1) == 34.3)
 check("0.343 离“均匀散在 (−1, 1) 里”的理论值 1 ÷ 3 ≈ 0.333 不远（50 个点凑不出正好的三分之一）",
       round(1 / 3, 3) == 0.333 and abs(m2_s - 1 / 3) < 0.02)
+check("1/3 的来历：方差 = 宽度² ÷ 12 = 2² ÷ 12 = 1/3；平方的平均 = 方差 + 平均的平方 = 1/3 + 0",
+      math.isclose(2 ** 2 / 12, 1 / 3) and math.isclose(1 / 3 + 0 ** 2, 1 / 3)
+      and math.isclose(np.mean(X_s ** 2), np.var(X_s) + np.mean(X_s) ** 2))
+check("x 放大 10 倍，x² 放大 10 × 10 = 100 倍：0.5 → 5，0.25 → 25；34.3 = 100 × 0.343",
+      0.5 ** 2 == 0.25 and 5 ** 2 == 25 and 25 / 0.25 == 100 and math.isclose(m2_b, 100 * m2_s, rel_tol=1e-9))
+grad_w_at_b = lambda b: float(np.mean(2 * (0.0 * X_b + b - Y_b) * X_b))   # w 按住在 0，看 b 动时 ∂L/∂w 怎么变
+print(minus(f"牵连：b 从 0 拧到 1，∂L/∂w 从 {grad_w_at_b(0):.3f} 变到 {grad_w_at_b(1):.3f}，大了 {grad_w_at_b(1) - grad_w_at_b(0):.4f}"
+            f" = 2 × (x 的平均 {mu_b:.3f})"))
+check("牵连：b 拧大 1，∂L/∂w 大 2 × (x 的平均) = 2 × 0.537 ≈ 1.07",
+      math.isclose(grad_w_at_b(1) - grad_w_at_b(0), 2 * mu_b) and round(2 * mu_b, 2) == 1.07 and round(2 * 0.537, 2) == 1.07)
 check("字面值重算：2 × 0.343 ≈ 0.69，2 ÷ 0.69 ≈ 2.9；2 × 34.3 ≈ 69，2 ÷ 69 ≈ 0.029",
       round(2 * 0.343, 2) == 0.69 and round(2 / 0.69, 1) == 2.9 and round(2 * 34.3) == 69 and round(2 / 69, 3) == 0.029)
 check("精确门槛：0.9957（第 3 章）→ 0.0292；单看 w 的 0.029 已经很准", round(alpha_limit(X_s), 4) == 0.9957
@@ -106,6 +146,9 @@ check("单看 w：每步乘 1 − 0.69α，乘数不小于 −1 ⇔ α ≤ 2 ÷ 
 print(f"圈的宽窄：w 方向只比 b 方向窄 √{m2_b:.1f} ≈ {math.sqrt(round(m2_b, 1)):.2f} 倍（不是 {m2_b:.1f} 倍：高度跟距离的平方走）")
 check("圈在 w 方向只比 b 方向窄 √34.3 ≈ 5.86 倍（5.86 × 5.86 ≈ 34.3）", round(math.sqrt(34.3), 2) == 5.86
       and round(5.86 * 5.86, 1) == 34.3 and abs(math.sqrt(m2_b) - 5.86) < 0.01)
+check("陡度 2 × 34.3 = 68.6，68.6 ÷ 2 = 34.3；w 方向高出碗底 34.3 × 距离²：高 1 的圈，w 方向走 0.171 = 1 ÷ 5.86 格，34.3 × 0.171² ≈ 1",
+      round(2 * 34.3, 1) == 68.6 and round(68.6 / 2, 1) == 34.3 and round(1 / math.sqrt(34.3), 3) == 0.171
+      and round(1 / 5.86, 3) == 0.171 and round(34.3 * 0.171 ** 2, 2) == 1.0 and abs(m2_b * (1 / math.sqrt(m2_b)) ** 2 - 1) < 1e-12)
 
 slope_b, icpt_b = np.linalg.lstsq(np.c_[X_b, np.ones_like(X_b)], Y_b, rcond=None)[0]   # 这 50 个点上最好的直线
 L_best = loss(X_b, Y_b, slope_b, icpt_b)
@@ -120,18 +163,31 @@ check("相邻两个相除是 −5.91、−5.85、−5.86，都在 −5.9 上下�
       [round(float(r), 2) for r in ratios] == [-5.91, -5.85, -5.86]
       and all(round(q, 1) == -5.9 for q in (11.8 / -2.0, -69.2 / 11.8, 405.1 / -69.2)))
 check("α = 0.1 第 1 步：w 从 0 跳到 13.8，离碗底 11.8", round(float(paths[1][1, 0]), 1) == 13.8 and round(float(dist_w[1]), 1) == 11.8)
+check("起点离碗底 0 − 2.0026 ≈ −2.0；13.8 − 2.0 = 11.8；−2.0 × (−5.9) = 11.8",
+      round(0 - slope_b, 1) == -2.0 and round(slope_b, 4) == 2.0026 and round(13.8 - 2.0, 1) == 11.8
+      and round(-2.0 * -5.9, 1) == 11.8)
 print(f"α = 0.02：b 每步只乘 1 − 0.02 × 2 = 0.96；100 步后 b = {b_02:.3f}，离最佳的 {icpt_b:.4f} 还差 {icpt_b - b_02:.3f}"
-      f"（0.96^100 = {0.96 ** 100:.4f}）")
+      f"（0.96^100 = {0.96 ** 100:.4f}）；w 每步乘 1 − 0.02 × {2 * m2_b:.1f} = {1 - 0.02 * 2 * m2_b:.2f}")
 check("α = 0.02：w 不飞了，可 100 步后 b 还差 0.017（= 起点差 1.0 × 0.96^100），损失 0.0102，没到碗底的 0.00993",
       round(icpt_b - b_02, 3) == 0.017 and round(0.96 ** 100, 3) == 0.017 and round(L_02, 4) == 0.0102
       and round(L_best, 5) == 0.00993 and L_02 > L_best)
+check("b 的最好值 1.0019，起点差 1.0；控制台 0.96 ** 100 = 0.0169",
+      round(icpt_b, 4) == 1.0019 and round(icpt_b - 0, 1) == 1.0 and round(0.96 ** 100, 4) == 0.0169)
+check("α = 0.02 时 w 方向每步乘 1 − 0.02 × 69 = −0.38：负号是跨到对面，大小小于 1，越跳越近（图里的“先左右跳几下”）",
+      round(1 - 0.02 * 69, 2) == -0.38 and -1 < 1 - 0.02 * 2 * m2_b < 0)
 
 print(f"归一化：μ = {mu_b:.3f}，σ = {sd_b:.3f}；x̃ 的平均 {np.mean(X_n):.1g}，x̃² 的平均 {np.mean(X_n ** 2):.6f}；"
       f"两个方向都是 {hessian(X_n)[0, 0]:g}，门槛 {alpha_limit(X_n):g}")
 check(f"x ∈ {rng_txt} 的 μ = 0.537、σ = 5.829", round(mu_b, 3) == 0.537 and round(sd_b, 3) == 5.829)
+X_shift = X_b - mu_b                              # 第一步：减平均（平移）
+print(f"减 {mu_b:.3f}：平均 {abs(np.mean(X_shift)):.3f}、标准差 {np.std(X_shift):.3f}；再除以 {sd_b:.3f}：标准差 {np.std(X_shift / sd_b):g}")
+check("平移和拉伸：减 0.537 后平均变 0、标准差还是 5.829；再除以 5.829，标准差 5.829 ÷ 5.829 = 1、平均还是 0",
+      abs(np.mean(X_shift)) < 1e-12 and math.isclose(np.std(X_shift), sd_b) and math.isclose(np.std(X_shift / sd_b), 1)
+      and abs(np.mean(X_shift / sd_b)) < 1e-12)
 check("归一化后 x̃ 的平均 0、x̃² 的平均 1 → 两个方向一样陡（都是 2），门槛正好 1",
       abs(np.mean(X_n)) < 1e-12 and math.isclose(np.mean(X_n ** 2), 1.0) and np.allclose(hessian(X_n), 2 * np.eye(2))
       and math.isclose(alpha_limit(X_n), 1.0))
+check("牵连没了：b 拧大 1 时 ∂L/∂w 大 2 × (x̃ 的平均) = 2 × 0 = 0", abs(hessian(X_n)[0, 1]) < 1e-12)
 check("归一化后 100 步的损失 0.00993373", round(L_n, 8) == 0.00993373)
 check(f"……正好是这 50 个点上最好的直线的损失（最小二乘算出 {L_best:.8f}）", abs(L_n - L_best) < 1e-10)
 slope_s, icpt_s = np.linalg.lstsq(np.c_[X_s, np.ones_like(X_s)], Y_s, rcond=None)[0]
@@ -139,11 +195,21 @@ check("两组 x 只差放大倍数：(−1, 1) 那组的碗底也是 0.00993373�
       abs(loss(X_s, Y_s, slope_s, icpt_s) - L_best) < 1e-12 and round(L_best, 8) == 0.00993373 and L_s > L_n)
 X_s_n = (X_s - X_s.mean()) / X_s.std()
 check("(−1, 1) 那串 x 和放大后的那串 x，归一化之后是同一串数：放大的倍数被消掉了", np.allclose(X_s_n, X_n))
+mu_s, sd_s = float(X_s.mean()), float(X_s.std())
+print(f"(−1, 1) 那组：μ = {mu_s:.4f}、σ = {sd_s:.4f}；读数 0.5 → {(0.5 - mu_s) / sd_s:.4f}，放大成 5 → {(5 - mu_b) / sd_b:.4f}")
+check("两把尺子：0.0537、0.5829 是 0.537、5.829 的十分之一；(0.5 − 0.0537) ÷ 0.5829 = 0.7657 = (5 − 0.537) ÷ 5.829",
+      round(mu_s, 4) == 0.0537 and round(sd_s, 4) == 0.5829 and round((0.5 - mu_s) / sd_s, 4) == 0.7657
+      and round((5 - mu_b) / sd_b, 4) == 0.7657 and round((0.5 - 0.0537) / 0.5829, 4) == 0.7657
+      and round((5 - 0.537) / 5.829, 4) == 0.7657 and 20 / 30 == 2 / 3)
 print(f"归一化后的 w 不再是 2：它是“x̃ 动 1（= x 动一个 σ）时 y 动多少” = {slope_b:.4f} × {sd_b:.3f} = {slope_b * sd_b:.2f}")
 check("w̃ = 11.67 = 2.0026 × 5.829（原来的斜率 × σ）", round(w_n, 2) == 11.67 and round(slope_b, 4) == 2.0026
       and round(2.0026 * 5.829, 2) == 11.67)
 check("归一化那一行从 (0, 0) 出发，碗底在 (11.67, 2.08)：w 差 11.67、b 差 2.08（这时 b 的最好值就是 y 的平均）",
       round(w_n, 2) == 11.67 and round(b_n, 2) == 2.08 and round(float(Y_b.mean()), 2) == 2.08)
+print(f"b 换了：x̃ = 0 就是 x = {mu_b:.3f}，最好的 b = {slope_b:.4f} × {mu_b:.3f} + {icpt_b:.4f} = {slope_b * mu_b + icpt_b:.4f}")
+check("最好的 b = 2.0026 × 0.537 + 1.0019 ≈ 2.08（x̃ = 0 时直线的高度）；x 大 5.829，x̃ 正好大 1",
+      round(slope_b * mu_b + icpt_b, 2) == 2.08 and round(2.0026 * 0.537 + 1.0019, 2) == 2.08
+      and math.isclose(((mu_b + sd_b) - mu_b) / sd_b, 1))
 
 X_t = make_data((-0.1, 0.1))[0]                   # 自测：范围缩小 10 倍
 m2_t = float(np.mean(X_t ** 2))
@@ -154,6 +220,9 @@ print(f"自测 (−0.1, 0.1)：x² 的平均 {m2_t:.5f}；2 × 0.00343 = 0.00686
 check("自测：0.00343 → 2 × 0.00343 = 0.00686，门槛 2 ÷ 0.00686 ≈ 291.5；每步乘 0.9993，缩到十分之一要三千多步",
       round(m2_t, 5) == 0.00343 and round(2 * 0.00343, 5) == 0.00686 and round(2 / 0.00686, 1) == 291.5
       and abs(2 / (2 * m2_t) - 291.5) < 1 and round(mult_t, 4) == 0.9993 and 3000 < steps_t < 4000)
+print(f"控制台核对：0.9993 ** 3000 = {0.9993 ** 3000:.4f}，0.9993 ** 3300 = {0.9993 ** 3300:.4f}")
+check("自测：1 − 0.1 × 0.00686 ≈ 0.9993；0.9993 连乘 3000 次剩 0.12，3300 次剩 0.099",
+      round(1 - 0.1 * 0.00686, 4) == 0.9993 and round(0.9993 ** 3000, 2) == 0.12 and round(0.9993 ** 3300, 3) == 0.099)
 
 
 def quad_path(H, alpha, start, steps):
@@ -269,6 +338,19 @@ check("两个方向差 35 ÷ 0.08 = 437.5 倍；读数差 20 倍上下，陡度�
       and 20 ** 2 == 400 and abs(math.sqrt(437.5) - 20) < 1.5)
 check("字面值重算：门槛 2 ÷ 23.33 = 0.0857，2 ÷ 0.0533 = 37.5",
       round(2 / 23.33, 4) == 0.0857 and round(2 / 0.0533, 1) == 37.5)
+check("约分：(2 × 35 ÷ 3) ÷ (2 × 0.08 ÷ 3) = 35 ÷ 0.08 = 3500 ÷ 8 = 437.5；拿舍入过的 23.33 ÷ 0.0533 会得 437.7",
+      math.isclose((2 * 35 / 3) / (2 * 0.08 / 3), 437.5) and 3500 / 8 == 437.5 and round(23.33 / 0.0533, 1) == 437.7)
+check("不正好是 400：5 对 0.2 是 25 倍，−3 对 −0.2 是 15 倍", math.isclose(5 / 0.2, 25) and math.isclose(-3 / -0.2, 15))
+alpha_g = 0.2 / steep[1]                          # 让重力那列每步乘 0.8 要多大的 α
+print(minus(f"让重力那列每步乘 0.8：α = 0.2 ÷ {steep[1]:.4f} = {alpha_g:.2f}，关节速度那列就乘 1 − {alpha_g:.2f} × {steep[0]:.2f} = "
+            f"{1 - alpha_g * steep[0]:.1f}；α = 0.05 时两列各乘 {1 - 0.05 * steep[0]:.2f} 和 {1 - 0.05 * steep[1]:.4f}，"
+            f"后者缩到十分之一要 {math.log(0.1) / math.log(1 - 0.05 * steep[1]):.0f} 步"))
+check("一个 α 顾不了两头：1 − α × 0.0533 = 0.8 ⇒ α = 0.2 ÷ 0.0533 ≈ 3.75，关节速度那列乘 1 − 3.75 × 23.33 ≈ −86",
+      math.isclose(1 - 0.8, 0.2) and round(0.2 / 0.0533, 2) == 3.75 and round(1 - 3.75 * 23.33) == -86
+      and math.isclose(alpha_g, 3.75) and abs(1 - alpha_g * steep[0] + 86) < 1)
+check("α = 0.05：关节速度那列乘 1 − 0.05 × 23.33 ≈ −0.17；重力那列乘 1 − 0.05 × 0.0533 ≈ 0.9973，0.9973 ** 850 ≈ 0.10，800 多步",
+      round(1 - 0.05 * 23.33, 2) == -0.17 and round(1 - 0.05 * 0.0533, 4) == 0.9973 and round(0.9973 ** 850, 2) == 0.10
+      and 800 < math.log(0.1) / math.log(1 - 0.05 * steep[1]) < 900 and 0.05 < 2 / steep[0])
 
 BLOCKS = [("身体角速度", 3, 3.0, "rad/s"), ("投影重力", 3, 1.0, "无单位"), ("关节角 − HOME", 14, 0.5, "rad"),
           ("关节速度", 14, 8.0, "rad/s"), ("上一步动作", 14, 0.5, "rad")]
@@ -283,6 +365,7 @@ check("3 + 3 + 14 + 14 + 14 = 48 列本体感觉 + 13 列命令 = 61 列", sum(k
       and len(COMMANDS) == 13 and len(amps) == 61)
 check("关节速度 ±8 是投影重力 ±1 的 8 倍、走路速度命令 ±0.4 的 20 倍、身体位置命令 ±0.005 的 1600 倍",
       8 / 1 == 8 and math.isclose(8 / 0.4, 20) and math.isclose(8 / 0.005, 1600) and math.isclose(amps.max() / amps.min(), 1600))
+check("8 ÷ 0.005：分子分母同乘 1000，就是 8000 ÷ 5 = 1600", math.isclose(8 / 0.005, 8000 / 5) and 8000 / 5 == 1600)
 cfg_path = REPO / "src" / "mjlab_microduck" / "tasks" / "microduck_velocity_env_cfg.py"
 CMD_LINES = ["joint_pos_action.scale = 1.0",
              "command.ranges.lin_vel_x = (-0.4, 0.4)", "command.ranges.lin_vel_y = (-0.3, 0.3)",
@@ -313,6 +396,8 @@ z6, zm2, z2 = [(x - mu1) / (sd1 + EPS) for x in (6.0, -2.0, 2.0)]
 print(minus(f"手算：(6 − 2) ÷ (4 + {EPS:g}) = 4 ÷ {sd1 + EPS:g} = {z6:.6f}；(−2 − 2) ÷ {sd1 + EPS:g} = {zm2:.6f}；(2 − 2) ÷ {sd1 + EPS:g} = {z2:g}"))
 check("6 → 0.997506，−2 → −0.997506，2 → 0", round(z6, 6) == 0.997506 and round(zm2, 6) == -0.997506 and z2 == 0)
 check("字面值重算：4 ÷ 4.01 = 0.997506", round(4 / 4.01, 6) == 0.997506)
+check("σ = 4 的列加不加 ε 几乎没差别：4 ÷ 4 = 1 对 4 ÷ 4.01 = 0.9975，只差 0.25%",
+      4 / 4 == 1 and round(4 / 4.01, 4) == 0.9975 and round((1 - 4 / 4.01) * 100, 2) == 0.25)
 norm1 = EmpiricalNormalization(1, eps=EPS)        # 项目用的归一化器，1 列
 norm1.update(torch.tensor([[-2.0], [6.0]]))       # 喂两个读数：平均 2，标准差 4
 out1 = norm1(torch.tensor([[6.0], [-2.0], [2.0]])).squeeze(1)
@@ -327,8 +412,8 @@ const = np.array([3.0, 3.0, 3.0])                 # 自测：一列从来不变
 z_const = (const - const.mean()) / (const.std() + EPS)
 print(f"一列从来不变（3、3、3）：σ = {const.std():g}，归一化后 {z_const.tolist()}")
 check("σ = 0 的列：加了 ε 不会除以 0，但分子也是 0，结果全是 0——没有信息", np.all(z_const == 0))
-check("自测（天气）：(−20 − (−18)) ÷ 5 = −0.4，(2 − 14) ÷ 3 = −4", math.isclose((-20 + 18) / 5, -0.4)
-      and math.isclose((2 - 14) / 3, -4))
+check("自测（天气）：(−20 − (−18)) ÷ 5 = (−20 + 18) ÷ 5 = −0.4，(2 − 14) ÷ 3 = −4", -20 - (-18) == -20 + 18 == -2
+      and math.isclose((-20 + 18) / 5, -0.4) and math.isclose((2 - 14) / 3, -4))
 
 sd_cols = mini.std(axis=0)                        # 除以条数 3（第 4 章 4.4 节的算法）
 mini_n = (mini - col_mean) / (sd_cols + EPS)
@@ -343,6 +428,23 @@ steep_n = 2 * (mini_n ** 2).mean(axis=0)          # 换算之后，第 2 节那�
 print(f"换算后两列的陡度：{steep_n[0]:.2f} 和 {steep_n[1]:.2f}（换算前是 {steep[0]:.2f} 和 {steep[1]:.4f}，差 437.5 倍）")
 check("迷你表换算之后，两个方向的陡度是 1.99 和 1.78，不再差几百倍",
       round(steep_n[0], 2) == 1.99 and round(steep_n[1], 2) == 1.78 and steep_n[0] / steep_n[1] < 1.2)
+check("√ 的核对：3.266 × 3.266 ≈ 10.67 = 32/3；ε 是 0.1633 的 6%，只是 3.266 的 0.3%",
+      round(3.266 * 3.266, 2) == 10.67 and round(32 / 3, 2) == 10.67 and round(0.01 / 0.1633 * 100) == 6
+      and round(0.01 / 3.266 * 100, 1) == 0.3)
+check("换算后的两列 1.221、0、−1.221 和 1.154、0、−1.154：陡度 2 × (1.221² + 0² + 1.221²) ÷ 3 = 1.99，2 × (1.154² + 0² + 1.154²) ÷ 3 = 1.78",
+      round((-3 - 1) / 3.276, 3) == -1.221 and round(2 * (1.221 ** 2 + 0 + 1.221 ** 2) / 3, 2) == 1.99
+      and round(2 * (1.154 ** 2 + 0 + 1.154 ** 2) / 3, 2) == 1.78 and round(mini_n[2, 0], 3) == -1.221
+      and round(mini_n[2, 1], 3) == -1.154)
+sd_after_mini = mini_n.std(axis=0)                # 换算后两列的标准差 = σ ÷ (σ + ε)
+print(f"换算后的标准差 = σ ÷ (σ + ε)：{sd_cols[0]:.3f} ÷ {sd_cols[0] + EPS:.3f} = {sd_after_mini[0]:.4f}，"
+      f"{sd_cols[1]:.4f} ÷ {sd_cols[1] + EPS:.4f} = {sd_after_mini[1]:.4f}；陡度 = 2 × 标准差² = "
+      f"{2 * sd_after_mini[0] ** 2:.2f}、{2 * sd_after_mini[1] ** 2:.2f}")
+check(f"换算后的标准差 = σ ÷ (σ + ε)（当前 ε = {EPS:g}），陡度 = 2 × 标准差²",
+      np.allclose(sd_after_mini, sd_cols / (sd_cols + EPS)) and np.allclose(steep_n, 2 * sd_after_mini ** 2))
+check("字面值：3.266 ÷ 3.276 = 0.9969，0.1633 ÷ 0.1733 = 0.9423；2 × 0.9969² = 1.99，2 × 0.9423² = 1.78",
+      round(3.266 / 3.276, 4) == 0.9969 and round(0.1633 / 0.1733, 4) == 0.9423 and round(2 * 0.9969 ** 2, 2) == 1.99
+      and round(2 * 0.9423 ** 2, 2) == 1.78 and round(sd_cols[0] / (sd_cols[0] + 0.01), 4) == 0.9969
+      and round(sd_cols[1] / (sd_cols[1] + 0.01), 4) == 0.9423)
 two = np.array([0.0, 1.0, 1.0, 0.0, 1.0])
 check("只挪零点、换刻度，不改形状：只有两个值的列，归一化后还是只有两个值",
       len(np.unique(np.round((two - two.mean()) / (two.std() + EPS), 12))) == 2)
@@ -363,6 +465,16 @@ check(f"两头的 σ 相差约 1600 倍（实测 {sd_jv / sd_body:.0f}）；关�
 check("归一化后 51 列在 0.94 以上；10 列小命令被压到 0.22–0.80", int((sd_after > 0.94).sum()) == 51
       and round(small.min(), 2) == 0.22 and round(small.max(), 2) == 0.80)
 check("均匀散开时，标准差约是幅度的 0.58 倍（1 ÷ √3）", round(1 / math.sqrt(3), 2) == 0.58)
+check("0.58 的来历：散在 −1 到 1，方差 2² ÷ 12 = 1/3，标准差 √(1/3) ≈ 0.577；乘 a：0.577 × 8 = 4.62，0.577 × 0.005 = 0.0029",
+      math.isclose(2 ** 2 / 12, 1 / 3) and round(math.sqrt(1 / 3), 3) == 0.577 and round(0.577 * 8, 2) == 4.62
+      and round(0.577 * 0.005, 4) == 0.0029 and round(math.sqrt(1 / 3) * 8, 2) == 4.62)
+small_theory = theory_after[48 + 3:]
+print(f"按 σ ÷ (σ + ε) 手算：最矮的大列（左右走的速度命令）0.173 ÷ 0.183 = {0.173 / 0.183:.3f}（实验 {sd_after[49]:.3f}）；"
+      f"小命令两头 0.0029 ÷ 0.0129 = {0.0029 / 0.0129:.2f}、0.04 ÷ 0.05 = {0.04 / 0.05:.2f}")
+check("被压小的两头：0.0029 ÷ (0.0029 + 0.01) = 0.22，0.04 ÷ (0.04 + 0.01) = 0.80；最矮的大列 0.577 × 0.3 = 0.173，0.173 ÷ 0.183 ≈ 0.945",
+      round(0.0029 / 0.0129, 2) == 0.22 and round(0.04 / 0.05, 2) == 0.80 and round(0.577 * 0.3, 3) == 0.173
+      and round(0.173 / 0.183, 3) == 0.945 and int(np.argmin(sd_after[:51])) == 49 and round(float(sd_after[49]), 2) == 0.95
+      and round(float(small_theory.min()), 2) == 0.22 and round(float(small_theory.max()), 2) == 0.80)
 sd_small = sd_before[48 + 3:]                     # 头 4 列 + 身体 6 列命令，换算前的 σ
 print(f"10 列小命令换算前的 σ：{sd_small.min():.4f}–{sd_small.max():.4f}；比 ε = 0.01 还小的有 {int((sd_small < 0.01).sum())} 列，"
       f"最大的是 ε 的 {sd_small.max() / 0.01:.1f} 倍")
@@ -467,11 +579,55 @@ print(f"新均值 = {mu_o:g} + ({m}/{n + m}) × ({mu_n:g} − {mu_o:g}) = {mu_me
 print(f"批内 (2 × 1 + 2 × 1) ÷ 4 = {within:g}；批间 (2 × 2 ÷ 4²) × 4² = {between:g}；合起来 {within + between:g}。"
       f"rsl_rl 的写法：1 + 0.5 × (1 − 1 + 4 × (5 − 3)) = {var_rsl:g}")
 check("新均值 1 + (2/4) × (5 − 1) = 3，和四个数直接平均一样", mu_merged == 3 and both.mean() == 3)
+check("第 1 步 平均 × 条数 = 总和：1 × 2 = 2 = 0 + 2，5 × 2 = 10 = 4 + 6，(2 + 10) ÷ 4 = 3",
+      mu_o * n == old.sum() == 2 and mu_n * m == new.sum() == 10 and (2 + 10) / 4 == 3)
+check("第 2 步 加权平均：(2 × 1 + 2 × 5) ÷ 4 = 3；两个班 (30 × 80 + 10 × 60) ÷ 40 = 3000 ÷ 40 = 75，不是 (80 + 60) ÷ 2 = 70",
+      (n * mu_o + m * mu_n) / (n + m) == 3 and 30 * 80 + 10 * 60 == 3000 and 3000 / 40 == 75 and (80 + 60) / 2 == 70)
+check("第 3 步 拆 5 = 1 + 4：两条各多出 4，一共 8，摊给 4 条每条 2，1 + 2 = 3；班级 80 + (10/40) × (60 − 80) = 75",
+      2 * (5 - 1) == 8 and 8 / 4 == 2 and 1 + 2 == 3 and 80 + (10 / 40) * (60 - 80) == 75 == 80 - 5)
+check("字母版：n μ旧 + m μ批 = N μ旧 + m (μ批 − μ旧)，除以 N 就是挪一点的式子",
+      math.isclose(n * mu_o + m * mu_n, (n + m) * mu_o + m * (mu_n - mu_o))
+      and math.isclose((n * mu_o + m * mu_n) / (n + m), mu_o + m / (n + m) * (mu_n - mu_o)))
 check("方差不是 (1 + 1) ÷ 2 = 1：离 3 的偏差 −3、−1、1、3，平方平均 (9 + 1 + 1 + 9) ÷ 4 = 5",
       (var_o + var_n) / 2 == 1 and np.array_equal(dev, [-3, -1, 1, 3]) and np.mean(dev ** 2) == 5)
 check("5 = 批内 1 + 批间 4（worked_examples 的合并公式，等于全量方差）", within == 1 and between == 4
       and within + between == both.var() == 5)
+
+a_part = np.array([mu_o - mu_merged] * n + [mu_n - mu_merged] * m)   # 它那批的中心离合并平均多远
+b_part = np.concatenate([old - mu_o, new - mu_n])                    # 它离自己那批的中心多远
+cross = 2 * a_part * b_part                                          # 交叉项 2ab
+print("交叉项表：a =", minus(str(a_part.tolist())), " b =", minus(str(b_part.tolist())), " a² =", (a_part ** 2).tolist(),
+      " 2ab =", minus(str(cross.tolist())), " b² =", (b_part ** 2).tolist(), " (a + b)² =", ((a_part + b_part) ** 2).tolist())
+print(f"  四行平均：a² {np.mean(a_part ** 2):g}，2ab {np.mean(cross):g}，b² {np.mean(b_part ** 2):g}，合起来 {np.mean((a_part + b_part) ** 2):g}")
+check("交叉项表：a = −2、−2、2、2，b = −1、1、−1、1；a² 都是 4，2ab 是 4、−4、−4、4（平均 0），b² 都是 1，(a + b)² = 9、1、1、9",
+      np.array_equal(a_part, [-2, -2, 2, 2]) and np.array_equal(b_part, [-1, 1, -1, 1]) and np.array_equal(a_part + b_part, dev)
+      and np.all(a_part ** 2 == 4) and np.array_equal(cross, [4, -4, -4, 4]) and np.mean(cross) == 0
+      and np.all(b_part ** 2 == 1) and np.array_equal((a_part + b_part) ** 2, [9, 1, 1, 9]) and 4 + 0 + 1 == 5)
+check("数 0 那一行：(−2 + (−1))² = 9 = (−2)² + 2 × (−2) × (−1) + (−1)² = 4 + 4 + 1",
+      (-2 + -1) ** 2 == 9 == (-2) ** 2 + 2 * (-2) * (-1) + (-1) ** 2 and 4 + 4 + 1 == 9)
+check("旧批两行的交叉项：2 × (−2) × (−1) + 2 × (−2) × (+1) = 2 × (−2) × [(−1) + (+1)] = 0",
+      2 * -2 * -1 + 2 * -2 * 1 == 2 * -2 * (-1 + 1) == 0)
+skew = np.array([0.0, 1.0, 5.0])
+check("离自己平均的偏差加起来总是 0：[0, 2] 是 −1 + 1；[0, 1, 5] 平均 2，偏差 −2、−1、+3，加起来也是 0",
+      (old - mu_o).sum() == 0 and skew.mean() == 2 and np.array_equal(skew - skew.mean(), [-2, -1, 3])
+      and (skew - skew.mean()).sum() == 0)
+check("b² 的平均 = 批内 (2 × 1 + 2 × 1) ÷ 4 = 1；a² 的平均 = 批间 (2 × (1 − 3)² + 2 × (5 − 3)²) ÷ 4 = 4",
+      np.mean(b_part ** 2) == within == (2 * 1 + 2 * 1) / 4 and np.mean(a_part ** 2) == between
+      == (2 * (1 - 3) ** 2 + 2 * (5 - 3) ** 2) / 4)
+N_tot = n + m
+check("批间的四步化简：中心离合并平均 −(2/4) × 4 = −2、(2/4) × 4 = 2；(0.5 × 4)² = 0.25 × 16 = 4；2 × 4 + 2 × 4 = 16 = (2 × 2 ÷ 16) × 16 × 4；16 ÷ 4 = 4",
+      mu_o - mu_merged == -(m / N_tot) * d == -2 and mu_n - mu_merged == (n / N_tot) * d == 2
+      and 1 - m / N_tot == (N_tot - m) / N_tot == n / N_tot and (0.5 * 4) ** 2 == 0.5 ** 2 * 4 ** 2 == 0.25 * 16 == 4
+      and 2 * 4 + 2 * 4 == 16 == (2 * 2 / 16) * 16 * 4 and 16 / 4 == 4
+      and math.isclose((n * (m / N_tot) ** 2 * d ** 2 + m * (n / N_tot) ** 2 * d ** 2) / N_tot, n * m / N_tot ** 2 * d ** 2))
 check("rsl_rl 的递推写法代进去也是 5", var_rsl == 5)
+first_half = var_o + rate * (var_n - var_o)       # 前半截：两批方差按条数加权（批内）
+second_half = rate * d * (mu_n - mu_merged)       # 后半截：rate × d × (μ批 − μ新)（批间）
+print(f"递推式拆两截：前半截 {var_o:g} + {rate:g} × ({var_n:g} − {var_o:g}) = {first_half:g}（批内），"
+      f"后半截 {rate:g} × {d:g} × ({mu_n:g} − {mu_merged:g}) = {second_half:g}（批间）")
+check("递推式的两截：前半截 1 + 0.5 × (1 − 1) = 1 = 批内；μ批 − μ新 = 5 − 3 = 2 = (1 − 0.5) × 4；后半截 0.5 × 4 × 2 = 4 = 批间",
+      first_half == within == 1 and mu_n - mu_merged == (1 - rate) * d == 2 and second_half == between == 4
+      and math.isclose(rate * (1 - rate) * d ** 2, n * m / N_tot ** 2 * d ** 2) and 1 + 4 == 5)
 new_alt = np.array([6.0, 8.0])                    # 三个 4 只是凑巧：新批换成 [6, 8]
 d_alt = new_alt.mean() - mu_o
 within_alt = (n * var_o + m * new_alt.var()) / (n + m)
@@ -480,6 +636,23 @@ print(f"反例：新批换成 [6, 8]，N 还是 {n + m}，d = {d_alt:g}，批间
       f"合并方差 {within_alt:g} + {between_alt:g} = {np.var(np.concatenate([old, new_alt])):g}")
 check("三个 4 只是凑巧：新批换成 [6, 8]，N 仍是 4，d = 6，批间 (2 × 2 ÷ 4²) × 6² = 9，合并方差 1 + 9 = 10",
       d_alt == 6 and between_alt == 9 and within_alt == 1 and np.var(np.concatenate([old, new_alt])) == 10)
+one = np.array([7.0])                             # 进阶折叠：条数不一样多，旧批 [0, 2] + 新批 [7]
+n1, m1 = len(old), len(one)
+N1, d1 = n1 + m1, one.mean() - mu_o
+mu1_new = mu_o + m1 / N1 * d1
+all1 = np.concatenate([old, one])
+within1 = (n1 * var_o + m1 * one.var()) / N1
+between1 = (n1 * (mu_o - mu1_new) ** 2 + m1 * (one.mean() - mu1_new) ** 2) / N1
+rec1 = var_o + m1 / N1 * (one.var() - var_o + d1 * (one.mean() - mu1_new))
+print(f"条数不等：[0, 2] + [7]，N = {N1}，d = {d1:g}，平均 {mu1_new:g}；直接算方差 {all1.var():.3f}；"
+      f"批内 {within1:.3f} + 批间 {between1:g} = {within1 + between1:.3f}；递推 {rec1:.3f}")
+check("条数不等：[0, 2] + [7]：平均 1 + (1/3) × 6 = 3；方差 (9 + 1 + 16) ÷ 3 = 8.667 = 批内 0.667 + 批间 8；中心离 3 是 −2 和 4",
+      math.isclose(mu1_new, 3) and all1.mean() == 3 and math.isclose(all1.var(), 26 / 3) and round(26 / 3, 3) == 8.667
+      and round(within1, 3) == 0.667 and math.isclose(between1, 8) and math.isclose(within1 + between1, all1.var())
+      and mu_o - mu1_new == -2 and one.mean() - mu1_new == 4 and (2 * 4 + 1 * 16) / 3 == 8
+      and math.isclose(n1 * m1 / N1 ** 2 * d1 ** 2, 8) and math.isclose(2 / 9 * 36, 8) and round(0.667 + 8, 3) == 8.667)
+check("条数不等时的递推：1 + (1/3) × (0 − 1 + 6 × (7 − 3)) = 1 + 23/3 = 8.667",
+      math.isclose(rec1, 26 / 3) and 0 - 1 + 6 * (7 - 3) == 23 and round(1 + 23 / 3, 3) == 8.667)
 nm = EmpiricalNormalization(1)
 nm.update(torch.tensor([[0.0], [2.0]]))
 after_first = (nm.mean.item(), nm._var.item())
@@ -489,6 +662,11 @@ print(f"EmpiricalNormalization：第一批后 μ = {after_first[0]:g}、方差 {
 check("项目的类：第一批 rate = 1，初值被换掉（μ = 1、方差 1）；第二批后 μ = 3、方差 5、σ = √5 = 2.236",
       after_first == (1.0, 1.0) and nm.mean.item() == 3 and math.isclose(nm._var.item(), 5, rel_tol=1e-6)
       and round(nm.std.item(), 3) == 2.236)
+nm04 = EmpiricalNormalization(1)                  # 另喂一批 [0, 4]：方差 4 ≠ 初值 1，看得出被整个换掉
+nm04.update(torch.tensor([[0.0], [4.0]]))
+print(f"另一个归一化器先喂 [0, 4]：μ = {nm04.mean.item():g}、方差 {nm04._var.item():g}（初值 1 被整个换成这批自己的 4）")
+check("rate = 1 时方差也被整个换掉：先喂 [0, 4]，存下的方差就是它自己的 4（不是初值 1）",
+      nm04.mean.item() == 2 and math.isclose(nm04._var.item(), 4) and np.var([0, 4]) == 4)
 nm.update(torch.tensor([[3.0], [3.0]]))           # 自测：第三批 [3, 3]
 check("自测：第三批 [3, 3] 进来，均值还是 3，方差降到 20 ÷ 6 = 3.333", nm.mean.item() == 3
       and round(nm._var.item(), 3) == 3.333 and round(np.var([0, 2, 4, 6, 3, 3]), 3) == 3.333)
@@ -513,6 +691,7 @@ table(["列", "rsl_rl 均值", "手写均值", "全部攒齐再算", "rsl_rl 标
 check("手写的在线均值 = rsl_rl 的", torch.allclose(norm.mean, mean.squeeze(0), atol=1e-5))
 check("在线算的均值、标准差 = 320 行攒齐了一次算", torch.allclose(norm.mean, X_all.mean(dim=0), atol=1e-4)
       and torch.allclose(norm.std, X_all.std(dim=0, unbiased=False), atol=1e-4))
+check("5 批 × 64 行 = 320 行", X_all.shape[0] == 5 * 64 == 320)
 print("项目里：每走一个环境步来一批（4096 只机器人各一行）；第 k 步 rate = 4096 ÷ (4096 × k) = 1/k。"
       f"1000 次迭代 × 24 步 = {1000 * 24:,} 批之后，rate 只剩 1/24,000")
 check("1000 × 24 = 24,000；4096 × 24 = 98,304", 1000 * 24 == 24000 and 4096 * 24 == 98304)
@@ -520,14 +699,22 @@ all_rows = 24000 * 4096
 print(f"要是全存下来：24,000 × 4096 = {all_rows:,} 行，每行 61 个数，一共 {all_rows * 61:,} 个（近 60 亿）")
 check("全存下来是 98,304,000 行 × 61 ≈ 60 亿个数（所以才要在线统计）",
       all_rows == 98_304_000 and 5.9e9 < all_rows * 61 < 6.0e9)
+print(f"按每个数 4 个字节：{all_rows * 61:,} × 4 = {all_rows * 61 * 4:,} 字节，约 {all_rows * 61 * 4 / 1e9:.0f} GB；"
+      "在线统计只记 61 + 61 + 1 个数")
+check("24,000 × 4096 = 24 × 4096 × 1000 = 98,304 × 1000；× 61 = 5,996,544,000；× 4 字节约 24 GB",
+      24000 * 4096 == 24 * 4096 * 1000 == 98304 * 1000 and all_rows * 61 == 5_996_544_000
+      and round(5_996_544_000 * 4 / 1e9) == 24)
+check("每批一样多：第 k 批 rate = 4096 ÷ (k × 4096) = 1/k，第 3 批 4096 ÷ 12,288 = 1/3；24,000 批后来一批高 100 的数据，μ 只挪 100 ÷ 24,000 ≈ 0.004",
+      3 * 4096 == 12288 and math.isclose(4096 / 12288, 1 / 3) and round(100 / 24000, 3) == 0.004
+      and round(100 / 24001, 3) == 0.004)
 
 # ---------------------------------------------------------------------------
 banner("4b. 画图：figures/ch08_running_merge.png（合并两批：均值按条数加权，方差还要加上两批中心的距离）")
-fig, axes = lesson_figure(3, "合并两批：均值按条数加权；方差 = 批内的散 + 两批中心的距离", panel_height=3.35, width=10.5)
+fig, axes = lesson_figure(3, "合并两批：均值按条数加权；方差 = 批内的散 + 两批中心的距离", panel_height=3.35, width=12.0)
 X0 = lambda v: 2.3 + v * 0.85                     # 数轴 0..6 → 图上横坐标
 for ax_i, ttl in zip(axes, ["① 均值：不用翻旧数据，也能算出 3", "② 方差：离 3 有多远，平方后平均 = 5",
-                            "③ 5 从哪来：两批中心离 3 的 ±2，加上批内的 ±1"]):
-    lesson_panel(ax_i, ttl, xmax=10.5, ymax=4.2)
+                            "③ 5 从哪来：两批中心离 3 的 ±2，加上批内的 ±1；交叉项平均是 0"]):
+    lesson_panel(ax_i, ttl, xmax=12.0, ymax=4.2)
 ax = axes[0]
 ax.plot([X0(-0.3), X0(6.4)], [1.9, 1.9], color=INK, lw=2)
 for t in range(7):
@@ -554,15 +741,18 @@ hand(ax, 8.0, 2.55, "(9 + 1 + 1 + 9) ÷ 4", color=INK, fontsize=FS_SMALL)
 hand(ax, 8.0, 1.85, "= 5", color=INK)
 note(ax, 0.0, 0.3, "只把两批各自的方差平均：(1 + 1) ÷ 2 = 1——少了一大块。")
 ax = axes[2]
-rows3 = [["数", "离 3", "中心离 3", "离自己中心"], ["0", "−3", "−2", "−1"], ["2", "−1", "−2", "+1"],
-         ["4", "1", "+2", "−1"], ["6", "3", "+2", "+1"]]
-lesson_cells(ax, rows3, left=0.3, bottom=0.7, width=1.7, height=0.5, fontsize=FS_SMALL,
+signed = lambda v: minus(f"{v:+g}")               # 带正负号：+2、−1
+rows3 = [["数", "离 3", "中心离 3", "离自己中心", "交叉项"]] + [
+    [f"{x:g}", minus(f"{x - mu_merged:g}"), signed(a), signed(b), signed(c)]
+    for x, a, b, c in zip(both, a_part, b_part, cross)]          # 和第 4 节交叉项表同一组变量
+lesson_cells(ax, rows3, left=0.3, bottom=0.7, width=1.6, height=0.5, fontsize=FS_SMALL,
              highlights=[(i, 2) for i in range(1, 5)])
-hand(ax, 7.25, 2.95, "离 3 = 中心离 3 + 离自己中心", color=INK, fontsize=FS_SMALL)
-hand(ax, 7.25, 2.3, "中心离 3：平方都是 4", color=ORANGE, fontsize=FS_SMALL)
-hand(ax, 7.25, 1.65, "离自己中心：平方都是 1", color=BLUE, fontsize=FS_SMALL)
-hand(ax, 7.25, 1.0, "平方的平均：4 + 1 = 5", color=INK, fontsize=FS_SMALL)
-note(ax, 0.0, 0.3, "每个数离 3 多远 = 它那批的中心离 3 多远（±2）+ 它离自己那批的中心多远（±1）。")
+hand(ax, 8.5, 2.95, f"中心离 3：平方都是 {np.mean(a_part ** 2):g}", color=ORANGE, fontsize=FS_SMALL)
+hand(ax, 8.5, 2.3, f"离自己中心：平方都是 {np.mean(b_part ** 2):g}", color=BLUE, fontsize=FS_SMALL)
+hand(ax, 8.5, 1.65, f"交叉项：平均是 {np.mean(cross):g}", color=GREEN, fontsize=FS_SMALL)
+hand(ax, 8.5, 1.0, f"平方的平均：{np.mean(a_part ** 2):g} + {np.mean(cross):g} + {np.mean(b_part ** 2):g} = "
+     f"{np.mean((a_part + b_part) ** 2):g}", color=INK, fontsize=FS_SMALL)
+note(ax, 0.0, 0.3, "每个数离 3 多远 = 它那批的中心离 3 多远（±2）+ 它离自己那批的中心多远（±1）；交叉项 = 两段相乘再乘 2。")
 savefig(fig, "ch08_running_merge")
 plt.close(fig)
 
@@ -588,6 +778,8 @@ check("在线的 μ 就是 30 批攒齐了算的平均", math.isclose(mu30, all3
 check(f"第 1 批 rate = 1：μ 直接等于这批的平均 1.55（当前 {track[0]:.2f}）", math.isclose(track[0], batches[0].mean().item(),
       rel_tol=1e-6) and round(track[0], 2) == 1.55)
 check(f"30 批后 μ 停在 2 附近（当前 {mu30:.2f}，和真实平均 2 差不到 0.2）", abs(mu30 - 2) < 0.2)
+check(f"第 1 批的平均不正好是 2：64 个数的平均一般差 4 ÷ √64 = 4 ÷ 8 = 0.5 左右（当前差 {abs(track[0] - 2):.2f}）",
+      4 / math.sqrt(64) == 4 / 8 == 0.5 and abs(track[0] - 2) < 0.5)
 frozen = nf.mean.clone()
 nf.eval()                                         # 评估模式：冻结
 for bt in batches[30:]:
@@ -662,6 +854,8 @@ twice = seen["多了（先手工换算，再喂烘焙好的整体）"]
 check("漏了：网络看到 6，是训练时 0.997506 的约 6 倍", round(6 / seen["恰好一次（烘焙好的整体）"], 1) == 6.0)
 check("多了：(0.997506 − 2) ÷ 4.01 ≈ −0.2500，正号变成负号", round(twice, 4) == -0.25 and twice < 0)
 check("字面值重算：(0.997506 − 2) ÷ 4.01 四舍五入到 4 位是 −0.2500", round((0.997506 - 2) / 4.01, 4) == -0.25)
+check("中间一步：0.997506 − 2 = −1.002494，−1.002494 ÷ 4.01 ≈ −0.2500",
+      round(0.997506 - 2, 6) == -1.002494 and round(-1.002494 / 4.01, 4) == -0.25)
 twice_exact = ((6 - 2) / 4.01 - 2) / 4.01
 check("用没舍入的 4/4.01 算是 −0.249998（worked_examples 的 −0.249998445），和 torch 算的一致",
       round(twice_exact, 6) == -0.249998 and math.isclose(twice, twice_exact, rel_tol=1e-5))
@@ -753,6 +947,9 @@ agents = REPO / "AGENTS.md"
 if agents.is_file():
     check("AGENTS.md：仿真里回放看不出这个错（in-sim play hides the bug）",
           "in-sim play hides the bug (it applies the" in agents.read_text(encoding="utf-8"))
+    check("AGENTS.md：简单的动作约练 1000 次迭代，走路要 4000–6000 次（8.4 节取 1000 当好算的整数）",
+          lines_in_order(agents.read_text(encoding="utf-8"), ["simple episodic tricks ≈ 1000 iters at 4096 envs",
+                                                             "curriculum-heavy recovery need 4000–6000."]))
 
 NORM_LINES = ["def __init__(self, shape: int | tuple[int, ...] | list[int], eps: float = 1e-2, until: int | None = None) -> None:",
               "def forward(self, x: torch.Tensor) -> torch.Tensor:", "return (x - self._mean) / (self._std + self.eps)",

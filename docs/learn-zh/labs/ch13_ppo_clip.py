@@ -2,8 +2,8 @@
 KL 散度与自适应学习率、一次迭代的记录数与更新次数——全部用小数字手算，再用 numpy / torch 核对。
 
 运行：uv run python docs/learn-zh/labs/ch13_ppo_clip.py
-纯 CPU，numpy + torch + matplotlib。第 7 节读三份源码的文字，并把 rsl_rl 的 update() 里那几行原样拿来跑本章的小例子；
-不加载机器人、不训练。
+纯 CPU，numpy + torch + matplotlib。第 5、6 节借 rsl_rl 自己的网络类和发牌函数（mini_batch_generator）做演示；
+第 7 节读项目配置和 rsl_rl 的几份源码，并把 update() 里那几行原样拿来跑本章的小例子；不加载机器人、不训练。
 小节编号与正文一一对应：实验第 K 节 = 正文 13.K 节（第 7 节对应「映射到项目」）。
 正文“改一改”要改的三行都带 `# TWEAK-k:` 标记（第 1、3、5 节各一处）。
 """
@@ -59,6 +59,10 @@ table(["", "平均分"], [["10 局记录直接平均", num(avg_records)], ["旧�
 print(f"手算：(5 × 3 + 5 × 1) ÷ 10 = {num(avg_records)}；J({P_NEW:g}) = 1 + 2 × {P_NEW:g} = {num(J(P_NEW))}")
 check("10 局直接平均 = 2 = 旧策略的 J(0.5)", avg_records == 2.0 and J(P_OLD) == 2.0)
 check("更新一次后 p = 0.7，新策略的平均分 J(0.7) = 2.4（第 11 章 11.1 节）", P_NEW == 0.7 and math.isclose(J(P_NEW), 2.4))
+check("J(p) 的来历：3 × p + 1 × (1 − p) = 3p + 1 − p = 1 + 2p（几个 p 都核对）；斜率 2、学习率 0.1：p ← 0.5 + 0.1 × 2 = 0.7",
+      all(math.isclose(3 * p + 1 * (1 - p), 1 + 2 * p) and math.isclose(3 * p + 1 - p, 1 + 2 * p) and math.isclose(J(p), 1 + 2 * p)
+          for p in (0.0, 0.3, 0.5, 0.7, 1.0))
+      and math.isclose((J(0.51) - J(0.49)) / 0.02, 2.0) and math.isclose(0.5 + 0.1 * 2, 0.7))
 
 rng = np.random.default_rng(0)
 N_PLAYS = 100_000
@@ -80,14 +84,61 @@ table(["键", "旧概率", "新概率", "比率 = 新 ÷ 旧", "局数"],
       [["蓝", num(P_OLD), num(P_NEW), num(w_blue), 5], ["绿", num(1 - P_OLD), num(1 - P_NEW), num(w_green), 5]])
 print(f"加权平均 = (5 × {num(w_blue)} × 3 + 5 × {num(w_green)} × 1) ÷ 10 = {num(avg_weighted)}")
 check("问卷的分量：(1/4) ÷ (1/2) = 0.5 份，(3/4) ÷ (1/2) = 1.5 份", (1 / 4) / (1 / 2) == 0.5 and (3 / 4) / (1 / 2) == 1.5)
+check("问卷：除以 1/2 就是乘 2（0.25 × 2 = 0.5）；100 份里各 50 份：50 × 0.5 = 25 份，50 × 1.5 = 75 份，合 100 份，地铁族占 25 ÷ 100 = 1/4",
+      0.25 * 2 == 0.5 == (1 / 4) / (1 / 2) and 50 * 0.5 == 25 and 50 * 1.5 == 75 and 25 + 75 == 100 and 25 / 100 == 1 / 4)
 check("比率：蓝 0.7 ÷ 0.5 = 1.4，绿 0.3 ÷ 0.5 = 0.6", math.isclose(w_blue, 1.4) and math.isclose(w_green, 0.6))
 check("加权后 (5 × 1.4 × 3 + 5 × 0.6 × 1) ÷ 10 = 2.4 = J(0.7)（字面值重算）",
       math.isclose(avg_weighted, 2.4) and math.isclose((5 * 1.4 * 3 + 5 * 0.6 * 1) / 10, 2.4))
+check("分子两块：5 × 1.4 × 3 = 7 × 3 = 21，5 × 0.6 × 1 = 3 × 1 = 3，(21 + 3) ÷ 10 = 2.4（字面值重算）",
+      math.isclose(5 * 1.4 * 3, 21) and math.isclose(5 * 1.4, 7) and math.isclose(5 * 0.6 * 1, 3) and math.isclose(5 * 0.6, 3)
+      and (21 + 3) / 10 == 2.4)
+
+# 为什么乘上分量就对：三步（13.2 节）
+units_blue, units_green = 5 * w_blue, 5 * w_green                 # 第一步：数份数
+print(f"份数：蓝 5 × {num(w_blue)} = {num(units_blue)} 份，绿 5 × {num(w_green)} = {num(units_green)} 份，"
+      f"合 {num(units_blue + units_green)} 份；蓝占 {num(units_blue / 10)}，绿占 {num(units_green / 10)}")
+check("第一步：7 份 + 3 份 = 10 份；(7 × 3 + 3 × 1) ÷ 10 = 0.7 × 3 + 0.3 × 1 = 2.1 + 0.3 = 2.4（字面值重算）",
+      math.isclose(units_blue, 7) and math.isclose(units_green, 3) and math.isclose(units_blue + units_green, 10)
+      and (7 * 3 + 3 * 1) / 10 == 2.4 and math.isclose(0.7 * 3 + 0.3 * 1, 2.4) and math.isclose(2.1 + 0.3, 2.4))
+check(f"理论：乘过分量，份数总和还是 10，蓝局占的比例变成新概率 {P_NEW:g}（换成别的 p 也一样）",
+      math.isclose(units_blue + units_green, 10) and math.isclose(units_blue / 10, P_NEW))
+table(["键", "在旧记录里占多少（旧概率）", "分量（新 ÷ 旧）", "占多少 × 分量", "新概率"],
+      [["蓝", num(P_OLD), num(w_blue), num(P_OLD * w_blue), num(P_NEW)],
+       ["绿", num(1 - P_OLD), num(w_green), num((1 - P_OLD) * w_green), num(1 - P_NEW)]])
+check(f"第二步（理论）：旧概率 × (新 ÷ 旧) = 新概率——蓝 {num(P_OLD)} × {num(w_blue)} = {num(P_NEW)}，绿 {num(1 - P_OLD)} × {num(w_green)} = {num(1 - P_NEW)}",
+      math.isclose(P_OLD * w_blue, P_NEW) and math.isclose((1 - P_OLD) * w_green, 1 - P_NEW))
+check("第二步的字面值：0.5 × (0.7 ÷ 0.5) = 0.7，0.5 × (0.3 ÷ 0.5) = 0.3；0.5 × 1.4 = 0.7，0.5 × 0.6 = 0.3；10 ÷ 0.5 × 0.5 = 10",
+      math.isclose(0.5 * (0.7 / 0.5), 0.7) and math.isclose(0.5 * (0.3 / 0.5), 0.3) and math.isclose(0.5 * 1.4, 0.7)
+      and math.isclose(0.5 * 0.6, 0.3) and 10 / 0.5 * 0.5 == 10)
 w_many = np.where(blue, w_blue, w_green)
 avg_many_w = float((w_many * np.where(blue, SCORE_BLUE, SCORE_GREEN)).mean())
-print(f"10 万局旧记录加权平均 = {avg_many_w:.4f}（新策略的真值 {J(P_NEW):g}）")
+print(f"10 万局旧记录加权平均 = {avg_many_w:.4f}（新策略的真值 {J(P_NEW):g}）；这 10 万局里蓝局占 {float(blue.mean()):.4f}，不恰好是 0.5")
 check("10 万局旧记录加权平均 2.4035（固定种子）", round(avg_many_w, 4) == 2.4035)
 check(f"理论：加权以后，10 万局旧记录的平均落在新策略的 J = {J(P_NEW):g} 附近", abs(avg_many_w - J(P_NEW)) < 0.03)
+check("第三步：随机的记录里蓝局不恰好占一半，所以只是约等于；2.4035 − 2.4 = 0.0035（字面值重算）",
+      float(blue.mean()) != 0.5 and round(2.4035 - 2.4, 4) == 0.0035)
+
+# 写成式子：四步，每一步游戏机代入都是 2.4（13.2 节）
+F_OF = {"蓝": SCORE_BLUE, "绿": SCORE_GREEN}
+PI_NEW, PI_OLD = {"蓝": P_NEW, "绿": 1 - P_NEW}, {"蓝": P_OLD, "绿": 1 - P_OLD}
+step1 = sum(PI_NEW[k] * F_OF[k] for k in F_OF)                                  # ① 定义：按新概率加权
+step2 = sum(PI_OLD[k] * (PI_NEW[k] / PI_OLD[k]) * F_OF[k] for k in F_OF)       # ② 塞进一个“旧 ÷ 旧”
+step3 = sum(PI_OLD[k] * ((PI_NEW[k] / PI_OLD[k]) * F_OF[k]) for k in F_OF)     # ③ 把 ρ × f 括成一块
+step4 = float(np.mean([(PI_NEW[k] / PI_OLD[k]) * F_OF[k] for k in records]))  # ④ 按旧策略抽的记录，每条 ρ × f 再平均
+print(f"四步：① {step1:.4g}  ② {step2:.4g}  ③ {step3:.4g}  ④ {step4:.4g}")
+check(f"理论：四步每一步都等于新策略的平均分 {J(P_NEW):g}",
+      all(math.isclose(s, J(P_NEW)) for s in (step1, step2, step3, step4)))
+check("四步的字面值：0.7 × 3 + 0.3 × 1 = 0.5 × 1.4 × 3 + 0.5 × 0.6 × 1 = 0.5 × 4.2 + 0.5 × 0.6 = 2.1 + 0.3 = 2.4；"
+      "1.4 × 3 = 4.2，0.6 × 1 = 0.6，(4.2 + 0.6) ÷ 2 = 2.4；2 × 3 × 4 先乘哪两个都是 24",
+      math.isclose(0.7 * 3 + 0.3 * 1, 2.4) and math.isclose(0.5 * 1.4 * 3 + 0.5 * 0.6 * 1, 2.4)
+      and math.isclose(0.5 * 4.2 + 0.5 * 0.6, 2.4) and math.isclose(1.4 * 3, 4.2) and 0.6 * 1 == 0.6
+      and math.isclose((4.2 + 0.6) / 2, 2.4) and (2 * 3) * 4 == 2 * (3 * 4) == 24)
+rng_is = np.random.default_rng(3)                                  # 不只游戏机：随便编 5 种动作的新旧概率和 f
+p_o5 = rng_is.random(5); p_o5 /= p_o5.sum()
+p_n5 = rng_is.random(5); p_n5 /= p_n5.sum()
+f5 = rng_is.normal(size=5)
+check("一般成立：随便编 5 种动作的新旧概率和 f，Σ π_新 × f = Σ π_旧 × (π_新 ÷ π_旧) × f",
+      math.isclose(float((p_n5 * f5).sum()), float((p_o5 * (p_n5 / p_o5) * f5).sum())))
 check("自测：p = 0.9 时比率 1.8、0.2，(5 × 1.8 × 3 + 5 × 0.2 × 1) ÷ 10 = (27 + 1) ÷ 10 = 2.8 = J(0.9)",
       math.isclose(0.9 / 0.5, 1.8) and math.isclose(0.1 / 0.5, 0.2) and math.isclose((5 * 1.8 * 3 + 5 * 0.2 * 1) / 10, 2.8)
       and math.isclose(J(0.9), 2.8))
@@ -133,6 +184,39 @@ check("ln 之差 = (0.5² − 0.3²) ÷ 2 = (0.25 − 0.09) ÷ 2 = 0.08：钟高
       and round(-0.9639 - (-1.0439), 4) == 0.08)
 check("两条路同一个数：exp(0.08) = 1.0833 = 高度之比；torch 的 log_prob 也给出同样的差",
       round(math.exp(0.08), 4) == 1.0833 and math.isclose(math.exp(lp_new_t - lp_old_t), rho))
+print(f"一步一步：√(2π) = {math.sqrt(2 * math.pi):.4f}；旧钟 exp(−0.125) = {math.exp(-0.125):.4f}，÷ 2.5066 = {math.exp(-0.125) / 2.5066:.5f}；"
+      f"新钟 exp(−0.045) = {math.exp(-0.045):.4f}，÷ 2.5066 = {math.exp(-0.045) / 2.5066:.5f}")
+check("钟的高度一步一步（字面值重算）：√(2π) → 2.5066；0.25 ÷ 2 = 0.125，exp(−0.125) → 0.8825，0.8825 ÷ 2.5066 → 0.35207；"
+      "0.09 ÷ 2 = 0.045，exp(−0.045) → 0.9560，0.9560 ÷ 2.5066 → 0.38139",
+      round(math.sqrt(2 * math.pi), 4) == 2.5066 and 0.25 / 2 == 0.125 and round(math.exp(-0.125), 4) == 0.8825
+      and round(0.8825 / 2.5066, 5) == 0.35207 and math.isclose(0.09 / 2, 0.045) and round(math.exp(-0.045), 4) == 0.956
+      and round(0.9560 / 2.5066, 5) == 0.38139 and math.isclose((0.5 - 0.2) ** 2, 0.09))
+xs_strip = A_REC - 0.005 + (np.arange(100) + 0.5) * 0.0001          # 动作 0.5 附近宽 0.01 的一小段，再切 100 条细条
+p_strip_new = float(np.sum(bell(xs_strip, MU_NEW, SIG)) * 0.0001)
+p_strip_old = float(np.sum(bell(xs_strip, MU_OLD, SIG)) * 0.0001)
+print(f"宽 0.01 的一小段：新钟里的概率 {p_strip_new:.7f}，旧钟里 {p_strip_old:.7f}，相除 {p_strip_new / p_strip_old:.4f}")
+check("宽度约掉：0.38139 × 0.01 = 0.0038139，0.35207 × 0.01 = 0.0035207，0.0038139 ÷ 0.0035207 → 1.0833（字面值重算）",
+      math.isclose(0.38139 * 0.01, 0.0038139) and math.isclose(0.35207 * 0.01, 0.0035207) and round(0.0038139 / 0.0035207, 4) == 1.0833)
+check("理论：把那一小段真的切成细条加面积，两个概率相除也是 1.0833（和高度之比相差不到 0.0001）",
+      abs(p_strip_new / p_strip_old - rho) < 1e-4 and round(p_strip_new / p_strip_old, 4) == 1.0833)
+check("减去负数就是加：−0.9639 − (−1.0439) = −0.9639 + 1.0439 = 0.08；数相除、指数相减：exp(−0.045) ÷ exp(−0.125) = exp(−0.045 − (−0.125)) = exp(0.08)",
+      round(-0.9639 - (-1.0439), 4) == round(-0.9639 + 1.0439, 4) == 0.08
+      and math.isclose(math.exp(-0.045) / math.exp(-0.125), math.exp(0.08)) and math.isclose(-0.045 - (-0.125), 0.08))
+
+
+def fast_ln_ratio(a, mu_old, mu_new, sigma):
+    """13.2 节的快算法：两口钟一样宽时，ln 比率 = [(a − 旧中心)² − (a − 新中心)²] ÷ (2σ²)。"""
+    return ((a - mu_old) ** 2 - (a - mu_new) ** 2) / (2 * sigma ** 2)
+
+
+check("理论：快算法和“两个 ln 高度直接相减”处处相同（换几个动作、中心、σ 都核对）",
+      all(math.isclose(fast_ln_ratio(a, mo, mn, s), math.log(bell(a, mn, s)) - math.log(bell(a, mo, s)), abs_tol=1e-12)
+          for a in (-1.3, 0.0, 0.5, 2.0) for mo, mn in ((0.0, 0.2), (0.4, -0.1)) for s in (0.5, 1.0, 1.7))
+      and math.isclose(fast_ln_ratio(0.5, 0.0, 0.2, 1.0), 0.08))
+check("配对相减：(5 + 7) − (2 + 3) = (5 − 2) + (7 − 3) = 7；数相乘、指数相加：exp(0.0953 + (−0.1054)) = exp(0.0953) × exp(−0.1054)",
+      (5 + 7) - (2 + 3) == (5 - 2) + (7 - 3) == 7 and math.isclose(math.exp(0.0953 + -0.1054), math.exp(0.0953) * math.exp(-0.1054)))
+check("exp 在 0 处的斜率是 1：exp(0.001) → 1.0010005，ln π 多 0.001，比率也几乎正好多 0.001",
+      round(math.exp(0.001), 7) == 1.0010005 and abs((math.exp(0.001) - 1) / 0.001 - 1) < 0.001)
 
 LN_TABLE = [(-1.0, -1.0), (-1.0, -0.8), (-1.0, -1.4)]          # 旧稿的三行：没变、更爱、更不爱
 rows = [[f"{o:g}", f"{n:g}", f"{n - o:+.1f}", f"{math.exp(n - o):.4f}"] for o, n in LN_TABLE]
@@ -147,6 +231,13 @@ lp_a = Normal(net(obs), 1.0).log_prob(act).sum(dim=-1)
 lp_b = Normal(net(obs), 1.0).log_prob(act).sum(dim=-1)
 check("第一次更新之前，新旧是同一张网络：14 个 ln 密度相加后相减恰好是 0，比率全是 1",
       torch.equal(torch.exp(lp_b - lp_a), torch.ones(5)))
+adv5 = torch.tensor([1.0, -0.5, 2.0, 0.3, -1.2])                     # 编的 5 个优势
+lp_now = Normal(net(obs), 1.0).log_prob(act).sum(dim=-1)
+g_ratio = torch.autograd.grad((-adv5 * torch.exp(lp_now - lp_now.detach())).mean(), net.weight)[0]
+lp_now = Normal(net(obs), 1.0).log_prob(act).sum(dim=-1)
+g_reinforce = torch.autograd.grad((-adv5 * lp_now).mean(), net.weight)[0]
+check("比率恰好是 1 时，“−Â × 比率”对旋钮的梯度和 REINFORCE 的“−Â × ln π”一模一样（exp 在 0 处斜率是 1）",
+      torch.allclose(g_ratio, g_reinforce))
 print(f"2 个关节的迷你版：ln 1.1 = {math.log(1.1):.4f}，ln 0.9 = {math.log(0.9):.4f}；相加 {math.log(1.1) + math.log(0.9):.4f}，"
       f"exp 回去 {math.exp(math.log(1.1) + math.log(0.9)):.2f} = 1.1 × 0.9")
 check("迷你版：ln 1.1 = 0.0953、ln 0.9 = −0.1054，相加 −0.0101，exp(−0.0101) = 0.99 = 1.1 × 0.9（字面值重算）",
@@ -241,6 +332,14 @@ print(f"新钟中心 0.5、σ = 0.1：动作 0.5 处高 {h_narrow:.4f}；比率 
 check("没有刹车：3.989 ÷ 0.35207 = 11.33，ρ × Â = 22.66（字面值重算）",
       round(h_narrow, 3) == 3.989 and round(rho_narrow, 2) == 11.33 and round(3.989 / 0.35207, 2) == 11.33
       and round(11.33 * 2, 2) == 22.66)
+h_peak = bell(A_REC, A_REC, 1.0)                                  # 第一步：中心挪到 0.5，σ 还是 1
+print(f"分两步：中心挪到 0.5 → 高 {h_peak:.4f}，比率 {h_peak / h_old:.3f}；再收窄到 σ = 0.1 → 高 {h_narrow:.3f}，比率 {rho_narrow:.2f}")
+check("没有刹车的两步（字面值重算）：1 ÷ 2.5066 → 0.3989，0.3989 ÷ 0.35207 → 1.133；1 ÷ (0.1 × 2.5066) → 3.989；没更新时 1 × 2 = 2，22.66 ÷ 2 = 11.33",
+      round(h_peak, 4) == 0.3989 and round(1 / 2.5066, 4) == 0.3989 and round(0.3989 / 0.35207, 3) == 1.133
+      and round(h_peak / h_old, 3) == 1.133 and round(1 / (0.1 * 2.5066), 3) == 3.989 and 1 * 2 == 2 and round(22.66 / 2, 2) == 11.33)
+check("σ = 0.1 的钟，95% 的动作落在 0.5 ± 2 × 0.1，即 0.3 到 0.7（第 4 章 4.6 节的 ±2σ）",
+      round(math.erf(2 / math.sqrt(2)), 2) == 0.95 and math.isclose(A_REC - 2 * 0.1, 0.3) and math.isclose(A_REC + 2 * 0.1, 0.7))
+check("限位的来历：0.8 = 1 − 0.2，1.2 = 1 + 0.2（clip_param = 0.2）", math.isclose(LO, 1 - 0.2) and math.isclose(HI, 1 + 0.2))
 
 
 def clipped_objective(ratio, adv, lo=None, hi=None):
@@ -279,6 +378,45 @@ check("斜率：平坦区（Â > 0 且 ρ > 1.2，或 Â < 0 且 ρ < 0.8）是 
       and CLIP == 0.2)
 check("ρ 从 1.5 再涨到 1.6，(Â = 2) 的目标还是 2.4：这一条不再奖励继续变",
       math.isclose(clipped_objective(torch.tensor(1.6), torch.tensor(2.0)).item(), 2.4))
+check("1.6 × 2 = 3.2，比 2.4 大，取不到它；min(3, 2.4) 就是 JS 的 Math.min(3, 2.4) = 2.4",
+      math.isclose(1.6 * 2, 3.2) and 3.2 > 2.4 and min(3, 2.4) == 2.4)
+nudge1 = clipped_objective(torch.tensor(1.51), torch.tensor(2.0)).item()
+nudge2 = clipped_objective(torch.tensor(0.51), torch.tensor(2.0)).item()
+print(f"ρ 挪 0.01：第 1 格 1.5 → 1.51，分 {num(nudge1)}（没变）；第 2 格 0.5 → 0.51，分 1 → {num(nudge2)}，多了 {num(nudge2 - 1)}")
+check("挪 0.01 量斜率：第 1 格 min(3.02, 2.4) = 2.4，分没变，斜率 0；第 2 格 min(1.02, 1.6) = 1.02，多 0.02，0.02 ÷ 0.01 = 2",
+      math.isclose(nudge1, 2.4) and math.isclose(1.51 * 2, 3.02) and math.isclose(nudge2, 1.02) and math.isclose(0.51 * 2, 1.02)
+      and math.isclose((nudge2 - 1) / 0.01, 2.0) and math.isclose(0.02 / 0.01, 2))
+
+
+def value_and_slope(fn, r, a):
+    """某种做法下，一条记录的分和它对 ρ 的斜率（torch 自动求导）。"""
+    rt = torch.tensor(float(r), requires_grad=True)
+    v = fn(rt, torch.tensor(float(a)))
+    v.backward()
+    return v.item(), rt.grad.item()
+
+
+THREE_WAYS = [("不裁剪：ρ × Â", lambda r, a: r * a),
+              ("只用裁剪版", lambda r, a: torch.clamp(r, LO, HI) * a),
+              ("两个里取小的（PPO）", clipped_objective)]
+three = {(name, k): value_and_slope(fn, *k) for name, fn in THREE_WAYS for k in FOUR}
+table(["格 (ρ, Â)"] + [name for name, _ in THREE_WAYS],
+      [[f"{i + 1} ({k[0]:g}, {k[1]:+g})"] + [f"{num(three[(name, k)][0])}（斜率 {num(three[(name, k)][1])}）" for name, _ in THREE_WAYS]
+       for i, k in enumerate(FOUR)])
+check("三列对照的值：不裁剪 3、1、−1、−3；只用裁剪版 2.4、1.6、−1.6、−2.4；取小的 2.4、1、−1.6、−3",
+      [round(three[("不裁剪：ρ × Â", k)][0], 4) for k in FOUR] == [3.0, 1.0, -1.0, -3.0]
+      and [round(three[("只用裁剪版", k)][0], 4) for k in FOUR] == [2.4, 1.6, -1.6, -2.4]
+      and [round(three[("两个里取小的（PPO）", k)][0], 4) for k in FOUR] == [2.4, 1.0, -1.6, -3.0])
+check("三列对照的斜率：不裁剪 2、2、−2、−2；只用裁剪版四格全是 0（第 2、4 格也不纠正了）；取小的 0、2、0、−2",
+      [three[("不裁剪：ρ × Â", k)][1] for k in FOUR] == [2.0, 2.0, -2.0, -2.0]
+      and [three[("只用裁剪版", k)][1] for k in FOUR] == [0.0, 0.0, 0.0, 0.0]
+      and [three[("两个里取小的（PPO）", k)][1] for k in FOUR] == [0.0, 2.0, 0.0, -2.0] and CLIP == 0.2)
+check("min 选中谁：走过了界时裁剪版更小（2.4 < 3，−1.6 < −1），往不利方向走时不裁剪的更小（1 < 1.6，−3 < −2.4）",
+      2.4 < 3 and -1.6 < -1 and 1 < 1.6 and -3 < -2.4)
+check("JS 的 clip 怎么走：max(1.5, 0.8) = 1.5，min(1.5, 1.2) = 1.2；max(0.5, 0.8) = 0.8，min(0.8, 1.2) = 0.8",
+      max(1.5, 0.8) == 1.5 and min(1.5, 1.2) == 1.2 and max(0.5, 0.8) == 0.8 and min(0.8, 1.2) == 0.8)
+check("L^CLIP 由里往外，代入第 1 格：1.5 × 2 = 3；clip(1.5, 0.8, 1.2) = 1.2，1.2 × 2 = 2.4；min(3, 2.4) = 2.4",
+      1.5 * 2 == 3 and min(max(1.5, 0.8), 1.2) == 1.2 and 1.2 * 2 == 2.4 and min(3, 2.4) == 2.4)
 v_self = clipped_objective(torch.tensor(1.4), torch.tensor(-1.0)).item()
 check("自测：Â = −1、ρ = 1.4 → min(−1.4, −1.2) = −1.4，斜率 −1，不在平坦区",
       math.isclose(v_self, -1.4) and math.isclose(slope(1.4, -1.0), -1.0))
@@ -303,6 +441,19 @@ print(f"{N_FLAT:,} 条记录，ln 之差的标准差 {LOG_SPREAD}：比率 {rati
       f"落在平坦区的 {frac * 100:.1f}%（理论 {theory * 100:.1f}%）")
 check("9.0% 的记录落在平坦区（固定种子）", round(frac * 100, 1) == 9.0)
 check(f"理论：落在平坦区的比例 ≈ {theory * 100:.1f}%（用高斯的面积算，容差 1 个百分点）", abs(frac - theory) < 0.01)
+ln_hi, ln_lo = math.log(HI), math.log(LO)
+tail_hi = 0.5 * (1 - math.erf(ln_hi / LOG_SPREAD / math.sqrt(2)))   # ln 之差那口钟，在 ln 1.2 以右的面积
+tail_lo = 0.5 * (1 + math.erf(ln_lo / LOG_SPREAD / math.sqrt(2)))   # 在 ln 0.8 以左的面积
+print(f"拆开：ln {num(HI)} = {ln_hi:.3f}，比率超过它的占 {tail_hi * 100:.1f}%，其中 Â 为正的一半 {tail_hi * 50:.1f}%；"
+      f"ln {num(LO)} = {ln_lo:.3f}，低于它的占 {tail_lo * 100:.1f}%，其中 Â 为负的一半 {tail_lo * 50:.1f}%；合 {(tail_hi + tail_lo) * 50:.1f}%")
+print(f"  这 {N_FLAT:,} 条假记录里实数：超过 {num(HI)} 的 {float((ratio_f > HI).mean()) * 100:.1f}%，低于 {num(LO)} 的 {float((ratio_f < LO).mean()) * 100:.1f}%")
+check("拆开 9.0%（字面值重算）：ln 1.2 → 0.182，ln 0.8 → −0.223；两边的面积 11.2%、6.8%，各只算一半：5.6% + 3.4% = 9.0%",
+      round(ln_hi, 3) == 0.182 and round(ln_lo, 3) == -0.223 and round(tail_hi * 100, 1) == 11.2 and round(tail_lo * 100, 1) == 6.8
+      and round(tail_hi * 50, 1) == 5.6 and round(tail_lo * 50, 1) == 3.4 and round(5.6 + 3.4, 1) == 9.0
+      and round(11.2 / 2, 1) == 5.6 and round(6.8 / 2, 1) == 3.4)
+check(f"理论：平坦区比例 = 上边出界的一半 + 下边出界的一半，正是上面用面积算的 {theory * 100:.1f}%；假记录里两边出界的比例也和面积对得上（容差 1 个百分点）",
+      math.isclose((tail_hi + tail_lo) / 2, theory) and abs(float((ratio_f > HI).mean()) - tail_hi) < 0.01
+      and abs(float((ratio_f < LO).mean()) - tail_lo) < 0.01)
 
 # 进阶折叠：平坦区的这一条不推了，不等于它的比率不再变——两条记录共用一个旋钮 μ
 A1, A2 = 2.0, 0.3                                               # 两个动作；优势都是 +1；σ = 1 不动；μ 从 0 出发
@@ -396,6 +547,14 @@ print("手算：(2.4 + 1 − 1.6 − 3) ÷ 4 = −0.3；取负号 → 0.3")
 check("四格当一小批：裁剪目标的平均 = (2.4 + 1 − 1.6 − 3) ÷ 4 = −0.3，surrogate_loss = 0.3",
       math.isclose(objective_mean, -0.3) and math.isclose(surrogate_loss4, 0.3) and CLIP == 0.2)
 check("rsl_rl 的 max(−…, −…) = −（教科书的 min(…, …)），换什么裁剪范围都成立", math.isclose(surrogate_loss4, -objective_mean))
+check("让 −L 变小就是让 L 变大：L 得 2.4 和 1，取负号 −2.4 和 −1，小的 −2.4 对应大的 2.4",
+      -2.4 < -1 and 2.4 > 1 and min(-2.4, -1) == -max(2.4, 1))
+check("四格平均从左往右（字面值重算）：2.4 + 1 = 3.4，3.4 − 1.6 = 1.8，1.8 − 3 = −1.2，−1.2 ÷ 4 = −0.3",
+      math.isclose(2.4 + 1, 3.4) and math.isclose(3.4 - 1.6, 1.8) and math.isclose(1.8 - 3, -1.2) and math.isclose(-1.2 / 4, -0.3))
+rng_mm = np.random.default_rng(5)
+check("−min(u, v) = max(−u, −v)：第 1 格 −min(3, 2.4) = −2.4 = max(−3, −2.4)；第 4 格 −min(−3, −2.4) = 3 = max(3, 2.4)；再随便抽 1000 对数核对",
+      -min(3, 2.4) == -2.4 == max(-3, -2.4) and -min(-3, -2.4) == 3 == max(3, 2.4)
+      and all(-min(u, v) == max(-u, -v) for u, v in rng_mm.normal(size=(1000, 2)).tolist()))
 
 # 价值裁剪：一条记录，采数据时 V = 0.2，标签（returns）0.5；更新后 V 可能在三个位置
 V_OLD, RET = 0.2, 0.5
@@ -438,6 +597,14 @@ check("平坦区是 0.4 ~ 0.6：中间（0.45、0.55）斜率恰好 0；出了 0
 check("自测：V = 0.7 → 不裁剪 (0.7 − 0.5)² = 0.04，裁剪版仍是 (0.4 − 0.5)² = 0.01，取大的 0.04，用的是不裁剪版（字面值重算）",
       math.isclose(value_loss_parts(0.7)[0], 0.04) and math.isclose(value_loss_parts(0.7)[2], 0.01)
       and math.isclose(value_loss_parts(0.7)[3], 0.04) and math.isclose((0.7 - 0.5) ** 2, 0.04))
+check("式子代入（字面值重算）：V = 0.55，挪动 0.55 − 0.2 = 0.35，夹成 0.2，V夹 = 0.2 + 0.2 = 0.4；V = −0.1，挪动 −0.3，夹成 −0.2，V夹 = 0；"
+      "max(0.0025, 0.01) = 0.01",
+      math.isclose(0.55 - 0.2, 0.35) and min(max(0.35, -0.2), 0.2) == 0.2 and math.isclose(0.2 + 0.2, 0.4)
+      and math.isclose(-0.1 - 0.2, -0.3) and min(max(-0.3, -0.2), 0.2) == -0.2 and math.isclose(0.2 + -0.2, 0.0)
+      and math.isclose(vparts[-0.1][1], 0.0) and max(0.0025, 0.01) == 0.01 and math.isclose((0.55 - 0.5) ** 2, 0.0025))
+check("斜率手算：(V − 0.5)² 的斜率 2 × (V − 0.5)；V = 0.35 → 2 × (−0.15) = −0.3，V = −0.1 → 2 × (−0.6) = −1.2（和自动求导一致）",
+      math.isclose(2 * (0.35 - 0.5), -0.3) and math.isclose(2 * (-0.1 - 0.5), -1.2)
+      and math.isclose(vparts[0.35][4], 2 * (0.35 - 0.5)) and math.isclose(vparts[-0.1][4], 2 * (-0.1 - 0.5)))
 
 ent_one = Normal(0.0, 1.0).entropy().item()
 ent14 = Normal(torch.zeros(14), torch.ones(14)).entropy().sum().item()
@@ -450,6 +617,22 @@ loss_one = -four_val[(1.5, 2.0)] + VAL_COEF * vparts[0.55][3] - ENT_COEF * round
 print(f"一条记录的总账：−{num(four_val[(1.5, 2.0)])} + 1.0 × {num(vparts[0.55][3])} − 0.01 × 19.865 = {loss_one:.5f}")
 check("一条记录的总账：−2.4 + 0.01 − 0.19865 = −2.58865（字面值重算）",
       math.isclose(loss_one, -2.58865) and math.isclose(-2.4 + 0.01 - 0.19865, -2.58865))
+check("从左往右（字面值重算）：−2.4 + 0.01 = −2.39，−2.39 − 0.19865 = −2.58865；熵的分量 0.01 是价值损失 1.0 的百分之一",
+      math.isclose(-2.4 + 0.01, -2.39) and math.isclose(-2.39 - 0.19865, -2.58865) and math.isclose(ENT_COEF / VAL_COEF, 0.01))
+# 三项加成一个数，梯度各走各的：一个 actor 旋钮（钟的中心 μ），一个 critic 旋钮（V）
+mu_a = torch.tensor(0.0, requires_grad=True)
+v_c = torch.tensor(0.35, requires_grad=True)                         # 选一个照常推的位置，梯度不是 0
+log_std = torch.tensor(0.0)
+lp_cur = Normal(mu_a, log_std.exp()).log_prob(torch.tensor(A_REC))
+ratio_c = torch.exp(lp_cur - math.log(h_old))
+term1 = -clipped_objective(ratio_c, torch.tensor(2.0))
+term2 = torch.max((v_c - RET) ** 2, (V_OLD + (v_c - V_OLD).clamp(-0.2, 0.2) - RET) ** 2)
+term3 = -ENT_COEF * Normal(mu_a, log_std.exp()).entropy()
+g_total = torch.autograd.grad(term1 + VAL_COEF * term2 + term3, (mu_a, v_c), retain_graph=True)
+g_actor_only = torch.autograd.grad(term1 + term3, mu_a, retain_graph=True)[0]
+g_critic_only = torch.autograd.grad(term2, v_c)[0]
+check("加法分开求导：总损失对 actor 旋钮的梯度 = 第一、三项的梯度；对 critic 旋钮的梯度 = 第二项的梯度",
+      math.isclose(g_total[0].item(), g_actor_only.item()) and math.isclose(g_total[1].item(), VAL_COEF * g_critic_only.item()))
 
 # 优势归一化之后：比率全是 1 时，surrogate_loss 的值是 0，梯度却不是 0
 raw = torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0])
@@ -581,32 +764,92 @@ check("KL：σ = 1、中心挪 0.2 → (1 + 0.2²) ÷ 2 − 0.5 = 0.52 − 0.5 =
       math.isclose(kl_a, 0.02) and math.isclose((1 + 0.2 ** 2) / 2 - 0.5, 0.02) and math.isclose(kl_torch, 0.02))
 check("挪 0.1 → 0.005", math.isclose(kl_half, 0.005) and SHIFT == 0.2)
 check(f"理论：挪动翻倍，KL 翻四倍（现在 {kl_a:.4g} ÷ {kl_half:.4g} = {kl_a / kl_half:.4g}）", math.isclose(kl_a / kl_half, 4.0))
-# 进阶折叠：KL 就是 13.2 节那个 ln 比率，取相反数、在旧钟下对所有动作取平均
+# KL = 按旧钟取平均的“ln 旧 − ln 新”，也就是 13.2 节那个 ln 比率取相反数。先一对一对手算
+pair_rows = []
+for a_p in (0.5, 1.0):
+    up, dn = fast_ln_ratio(a_p, 0.0, SHIFT, 1.0), fast_ln_ratio(-a_p, 0.0, SHIFT, 1.0)
+    pair_rows.append([f"±{a_p:g}", f"{up:.4g}", f"{dn:.4g}", f"{(-up - dn) / 2:.4g}"])
+table(["一对动作", "a 的 ln 比率", "−a 的 ln 比率", "取相反数再平均"], pair_rows)
+check("一对一对手算（字面值重算）：a = 0.5 → (0.25 − 0.09) ÷ 2 = 0.08，a = −0.5 → (0.25 − 0.49) ÷ 2 = −0.12，(−0.08 + 0.12) ÷ 2 = 0.02；"
+      "a = ±1 → (1 − 0.64) ÷ 2 = 0.18、(1 − 1.44) ÷ 2 = −0.22，(−0.18 + 0.22) ÷ 2 = 0.02",
+      math.isclose(fast_ln_ratio(0.5, 0.0, 0.2, 1.0), 0.08) and math.isclose(fast_ln_ratio(-0.5, 0.0, 0.2, 1.0), -0.12)
+      and math.isclose((0.25 - 0.49) / 2, -0.12) and math.isclose((-0.08 + 0.12) / 2, 0.02)
+      and math.isclose(fast_ln_ratio(1.0, 0.0, 0.2, 1.0), 0.18) and math.isclose(fast_ln_ratio(-1.0, 0.0, 0.2, 1.0), -0.22)
+      and math.isclose((1 - 0.64) / 2, 0.18) and math.isclose((1 - 1.44) / 2, -0.22) and math.isclose((-0.18 + 0.22) / 2, 0.02)
+      and math.isclose(0.8 ** 2, 0.64) and math.isclose(1.2 ** 2, 1.44) and math.isclose(0.7 ** 2, 0.49))
+check(f"理论：任何一对 ±a，ln 比率取相反数再平均都是 挪动² ÷ 2 = {SHIFT ** 2 / 2:.4g}（挪动 {num(SHIFT)}）",
+      all(math.isclose((-fast_ln_ratio(a_p, 0.0, SHIFT, 1.0) - fast_ln_ratio(-a_p, 0.0, SHIFT, 1.0)) / 2, SHIFT ** 2 / 2)
+          for a_p in (0.1, 0.5, 1.0, 2.0, 3.7)))
+check("展开（字面值重算）：(a − 0.2)² = a² − 0.4a + 0.04，[a² − (a² − 0.4a + 0.04)] ÷ 2 = 0.2a − 0.02；a = 0.5 → 0.2 × 0.5 − 0.02 = 0.1 − 0.02 = 0.08",
+      all(math.isclose((a_p - 0.2) ** 2, a_p * a_p - 0.4 * a_p + 0.04, abs_tol=1e-12)
+          and math.isclose((a_p * a_p - (a_p * a_p - 0.4 * a_p + 0.04)) / 2, 0.2 * a_p - 0.02, abs_tol=1e-12)
+          for a_p in (-1.0, -0.5, 0.0, 0.5, 1.0, 2.0))
+      and math.isclose(0.2 * 0.5, 0.1) and math.isclose(0.1 - 0.02, 0.08))
+check(f"理论：一般的挪动 d，ln 比率 = d × a − d² ÷ 2（d = {num(SHIFT)}，几个 a 都核对）；旧钟下 a 的平均是 0，平均下来只剩 −d² ÷ 2",
+      all(math.isclose(fast_ln_ratio(a_p, 0.0, SHIFT, 1.0), SHIFT * a_p - SHIFT ** 2 / 2, abs_tol=1e-12) for a_p in (-2.0, -0.5, 0.3, 1.0)))
+check("d² ÷ 2（字面值重算）：0.2² ÷ 2 = 0.04 ÷ 2 = 0.02；0.1² ÷ 2 = 0.01 ÷ 2 = 0.005；0.04 正好是 0.01 的 4 倍",
+      math.isclose(0.2 ** 2, 0.04) and math.isclose(0.04 / 2, 0.02) and math.isclose(0.1 ** 2, 0.01) and math.isclose(0.01 / 2, 0.005)
+      and math.isclose(0.04 / 0.01, 4))
 a_many = np.random.default_rng(0).normal(0.0, 1.0, 200_000)      # 从旧钟（中心 0、σ = 1）里抽 20 万个动作
-ln_ratio_many = (a_many ** 2 - (a_many - SHIFT) ** 2) / 2        # 每个动作的 ln 比率（13.2 节：[a² − (a − 挪动)²] ÷ 2）
+ln_ratio_many = (a_many ** 2 - (a_many - SHIFT) ** 2) / 2        # 每个动作的 ln 比率（13.2 节的快算法）
 ln_ratio_mean = float(ln_ratio_many.mean())
 print(f"从旧钟抽 20 万个动作：ln 比率的平均 = {ln_ratio_mean:.4f}；取相反数 = {-ln_ratio_mean:.4f}，正是 KL {kl_a:.4g}")
-check(f"进阶折叠：ln 比率在旧钟下的平均 {ln_ratio_mean:.4f}，取相反数正是 KL {kl_a:.4g}（正文的数：−0.0200，固定种子）",
+check(f"ln 比率在旧钟下的平均 {ln_ratio_mean:.4f}，取相反数正是 KL {kl_a:.4g}（正文的数：−0.0200，固定种子）",
       round(ln_ratio_mean, 4) == -0.02 and SHIFT == 0.2 and abs(ln_ratio_mean + kl_a) < 0.002)
-check("进阶折叠：动作 0.5 那一条的 ln 比率是 0.08，只是一条，不是平均（13.2 节）",
+check("动作 0.5 那一条的 ln 比率是 0.08，只是一条，不是平均（13.2 节）",
       math.isclose(ln_new - ln_old, 0.08))
+kl_narrow = kl_divergence(Normal(0.0, 0.5), Normal(0.2, 0.5)).item()
+check("钟窄一半（σ = 0.5）、同样挪 0.2：(0.2 ÷ 0.5)² ÷ 2 = 0.4² ÷ 2 = 0.08，是 σ = 1 时 0.02 的 4 倍；torch 也是 0.08",
+      math.isclose(kl_same_sigma(0.2, 0.5), 0.08) and math.isclose(kl_narrow, 0.08) and math.isclose(0.2 / 0.5, 0.4)
+      and math.isclose(0.4 ** 2 / 2, 0.08) and math.isclose(0.08 / 0.02, 4))
 d_target = math.sqrt(2 * 0.01)
 d_14 = math.sqrt(2 * 0.01 / 14)
 print(f"KL = 0.01 对应挪 {d_target:.4f} 个 σ；14 个关节一起挪、合计 0.01：每个挪 {d_14:.4f} 个 σ")
 check("目标 0.01：一个关节挪 0.1414 σ（0.1414² ÷ 2 ≈ 0.01）；14 个关节合计 0.01，每个只挪 0.0378 σ（14 × 0.0378² ÷ 2 ≈ 0.01）",
       round(d_target, 4) == 0.1414 and round(d_14, 4) == 0.0378 and round(0.1414 ** 2 / 2, 4) == 0.01
       and round(14 * 0.0378 ** 2 / 2, 4) == 0.01)
+check("倒过来解（字面值重算）：0.01 × 2 = 0.02，√0.02 → 0.1414；0.02 ÷ 14 → 0.00143，√0.00143 → 0.0378；≈ 只因为四舍五入：0.1414² ÷ 2 = 0.0099970",
+      math.isclose(0.01 * 2, 0.02) and round(math.sqrt(0.02), 4) == 0.1414 and round(0.02 / 14, 5) == 0.00143
+      and round(math.sqrt(0.00143), 4) == 0.0378 and round(0.1414 ** 2 / 2, 7) == 0.0099970)
 kl14 = kl_divergence(Normal(torch.zeros(14), torch.ones(14)), Normal(torch.full((14,), 0.2), torch.ones(14))).sum().item()
 check("14 个关节的中心都挪 0.2 σ：14 × 0.02 = 0.28", math.isclose(kl14, 0.28))
+shifts14 = np.linspace(0.02, 0.3, 14)                              # 14 个关节各挪各的
+a14 = np.random.default_rng(4).normal(0.0, 1.0, (200_000, 14))      # 从旧的 14 口钟里抽 20 万个 14 维动作
+ln_gap14 = ((a14 ** 2 - (a14 - shifts14) ** 2) / 2).sum(axis=1)     # 每条动作：14 个关节的 ln 比率相加
+check(f"理论：14 维动作的 KL（按旧钟抽、把 −ln 比率的 14 项和取平均）= 14 个关节各自的 KL 相加 = {float(np.sum(shifts14 ** 2 / 2)):.4f}（抽样容差 0.003）",
+      abs(-float(ln_gap14.mean()) - float(np.sum(shifts14 ** 2 / 2))) < 0.003)
 
-mu1, s1, mu2, s2 = 0.0, 1.0, 0.3, 0.8                            # 进阶折叠：宽度也变
+mu1, s1, mu2, s2 = 0.0, 1.0, 0.3, 0.8                            # 宽度也变：一般公式的三块（13.5 节）
 kl_on = math.log(s2 / s1) + (s1 ** 2 + (mu1 - mu2) ** 2) / (2 * s2 ** 2) - 0.5
 kl_no = math.log(s1 / s2) + (s2 ** 2 + (mu2 - mu1) ** 2) / (2 * s1 ** 2) - 0.5
 kl_on_t = kl_divergence(Normal(mu1, s1), Normal(mu2, s2)).item()
+print(f"三块：ln(0.8 ÷ 1) = {math.log(s2 / s1):.5f}；(1 + 0.3²) ÷ (2 × 0.8²) = {(s1 ** 2 + (mu1 - mu2) ** 2) / (2 * s2 ** 2):.5f}；−0.5；合 {kl_on:.5f}")
 table(["", "手算公式", "torch"], [["KL(旧‖新)", f"{kl_on:.4f}", f"{kl_on_t:.4f}"],
                                  ["KL(新‖旧)", f"{kl_no:.4f}", f"{kl_divergence(Normal(mu2, s2), Normal(mu1, s1)).item():.4f}"]])
-check("进阶折叠：旧钟 (0, 1)、新钟 (0.3, 0.8)：KL(旧‖新) = ln 0.8 + 1.09 ÷ 1.28 − 0.5 = 0.1284，和 torch 一致",
+check("旧钟 (0, 1)、新钟 (0.3, 0.8)：KL(旧‖新) = ln 0.8 + 1.09 ÷ 1.28 − 0.5 = 0.1284，和 torch 一致",
       round(kl_on, 4) == 0.1284 and math.isclose(kl_on, kl_on_t) and round(math.log(0.8) + 1.09 / 1.28 - 0.5, 4) == 0.1284)
+check("三块逐块（字面值重算）：ln 0.8 → −0.22314；1 + 0.3² = 1.09，2 × 0.8² = 1.28，1.09 ÷ 1.28 → 0.85156；−0.22314 + 0.85156 − 0.5 = 0.12842 → 0.1284",
+      round(math.log(0.8), 5) == -0.22314 and math.isclose(1 + 0.3 ** 2, 1.09) and math.isclose(2 * 0.8 ** 2, 1.28)
+      and round(1.09 / 1.28, 5) == 0.85156 and round(-0.22314 + 0.85156 - 0.5, 5) == 0.12842 and round(0.12842, 4) == 0.1284)
+
+
+def kl_general(mu_o, s_o, mu_n, s_n):
+    """一般公式：KL(旧‖新) = ln(σn/σo) + (σo² + (μo − μn)²) ÷ (2σn²) − ½。"""
+    return math.log(s_n / s_o) + (s_o ** 2 + (mu_o - mu_n) ** 2) / (2 * s_n ** 2) - 0.5
+
+
+check("理论：宽度相同时一般公式退回 d² ÷ 2——(1 + d²) ÷ 2 − 0.5 = 0.5 + d² ÷ 2 − 0.5；各种宽度、中心下也和 torch 一致",
+      all(math.isclose(kl_general(0.0, 1.0, d, 1.0), d * d / 2, abs_tol=1e-15) and math.isclose((1 + d * d) / 2 - 0.5, d * d / 2, abs_tol=1e-15)
+          for d in (0.0, 0.1, 0.2, 0.7))
+      and all(math.isclose(kl_general(mo, so, mn, sn), kl_divergence(Normal(mo, so), Normal(mn, sn)).item())
+              for mo, so, mn, sn in ((0.0, 1.0, 0.3, 0.8), (0.5, 0.3, -0.2, 1.4), (1.0, 2.0, 1.0, 0.5))))
+ln_old_many = -(a_many ** 2) / 2 - 0.5 * math.log(2 * math.pi)                                  # 旧钟 (0, 1) 的 ln 高度
+ln_new_many = -((a_many - mu2) ** 2) / (2 * s2 ** 2) - math.log(s2) - 0.5 * math.log(2 * math.pi)  # 新钟 (0.3, 0.8)
+kl_sampled = float((ln_old_many - ln_new_many).mean())
+sq_mean = float(((a_many - mu2) ** 2).mean())
+print(f"进阶折叠：同一批 20 万个旧动作，“ln 旧 − ln 新”直接平均 = {kl_sampled:.4f}（公式 {kl_on:.4f}）；(a − 0.3)² 的平均 = {sq_mean:.4f}（公式 1.09）")
+check("进阶折叠：抽样直接平均 → 0.129，和公式的 0.1284 只差运气；(a − 0.3)² 的平均 → 1.092，公式 1 + 0.3² = 1.09（固定种子）",
+      round(kl_sampled, 3) == 0.129 and abs(kl_sampled - kl_on) < 0.005 and round(sq_mean, 3) == 1.092 and abs(sq_mean - 1.09) < 0.01)
 check("进阶折叠：反过来 KL(新‖旧) = 0.0881 ≠ 0.1284：不对称，所以叫散度", round(kl_no, 4) == 0.0881)
 check("同一口钟和自己比：KL 恰好是 0（旋钮和输入归一化器都没动时就是这样）",
       kl_divergence(Normal(torch.tensor([0.3]), torch.tensor([0.8])), Normal(torch.tensor([0.3]), torch.tensor([0.8]))).item() == 0.0)
@@ -651,6 +894,28 @@ lr_t.append(adapt(lr_t[-1], 0.02))
 lr_t.append(adapt(lr_t[-1], 0.004))
 check("自测：0.021 → 0.001 ÷ 1.5 = 0.00066667；0.02 → 不动；0.004 → × 1.5，回到 0.001",
       round(lr_t[0], 8) == 0.00066667 and lr_t[1] == lr_t[0] and math.isclose(lr_t[2], 0.001))
+check("记号：1.0e-3 = 0.001，1e-5 = 0.00001，1e-2 = 0.01；上下限差 0.01 ÷ 0.00001 = 1000 倍；连除两次 1.5 就是除以 1.5 × 1.5 = 2.25",
+      1.0e-3 == 0.001 and 1e-5 == 0.00001 and 1e-2 == 0.01 and round(0.01 / 0.00001) == 1000 and 1.5 * 1.5 == 2.25
+      and math.isclose(0.001 / 1.5 / 1.5, 0.001 / 2.25))
+
+
+def kl_after_adam(lr, steps=4):
+    """一个关节的钟，从中心 0 出发用 Adam 走几步（梯度方向一直不变），量走完时和起点那口钟的 KL。"""
+    mu_k = torch.tensor(0.0, requires_grad=True)
+    opt_k = torch.optim.Adam([mu_k], lr=lr)
+    for _ in range(steps):
+        opt_k.zero_grad()
+        ((mu_k - 3.0) ** 2).backward()
+        opt_k.step()
+    return kl_same_sigma(mu_k.item())
+
+
+kl_lr, kl_lr_small = kl_after_adam(0.05), kl_after_adam(0.05 / 1.5)
+print(f"Adam 走 4 步：学习率 0.05 → KL {kl_lr:.5f}；学习率 ÷ 1.5 → KL {kl_lr_small:.5f}；两者之比 {kl_lr / kl_lr_small:.3f}")
+check("为什么调学习率管用（字面值重算）：KL 跟着挪动的平方走，学习率 ÷ 1.5 → KL 约 ÷ 2.25；0.03 ÷ 2.25 → 0.0133，落回 0.005 ~ 0.02",
+      math.isclose(1.5 ** 2, 2.25) and round(0.03 / 2.25, 4) == 0.0133 and 0.005 < 0.03 / 2.25 < 0.02)
+check("理论：用 Adam 真走 4 步，同样几步攒下的 KL，学习率 ÷ 1.5 之后约是原来的 1/2.25（比值差不到 0.05）",
+      abs(kl_lr / kl_lr_small - 2.25) < 0.05)
 
 # 进阶折叠：第一次更新时 KL 真的是 0 吗？用 rsl_rl 自己的网络类（带输入归一化）演示
 try:
@@ -702,6 +967,11 @@ else:
     check("进阶折叠：中心差 0.0002 的两口钟，KL 该是 0.0002² ÷ 2 = 0.00000002（公式里先算 1 + 0.0002² = 1 + 0.00000004），32 位小数算出来是 0",
           math.isclose(kl_tiny64, 2e-8, rel_tol=1e-6) and math.isclose(0.0002 ** 2, 4e-8) and kl_tiny32 == 0.0
           and float(torch.tensor(1.0, dtype=torch.float32) + torch.tensor(4e-8, dtype=torch.float32)) == 1.0)
+    eps32 = torch.finfo(torch.float32).eps
+    print(f"float32 能分辨的最小相对差别 = {eps32:.3g}（大约 7 位有效数字）；1 + 0.00000004 存下来 = "
+          f"{float(torch.tensor(1.0, dtype=torch.float32) + torch.tensor(4e-8, dtype=torch.float32)):.10f}")
+    check("进阶折叠：float32 只记得约 7 位有效数字（能分辨的最小相对差别在 0.0000001 到 0.0000002 之间），亿分之几加到 1 上就没了",
+          1e-7 < eps32 < 2e-7 and 4e-8 < eps32 / 2)
 
 # ---------------------------------------------------------------------------
 banner("5b. 画图：figures/ch13_kl_shift.png（挪一倍远，KL 变四倍；三段规则）")
@@ -765,6 +1035,38 @@ n_updates = N_MB * N_EPOCHS
 table(["", "数"], [["4096 只 × 24 步", f"{batch:,}"], ["切 4 份，每份", f"{mb:,}"], ["过 5 遍，更新次数", n_updates]])
 check("4096 × 24 = 98,304；÷ 4 = 24,576；4 × 5 = 20（第 5 章 📍、第 7 章 7.6 节）",
       batch == 98_304 and mb == 24_576 and n_updates == 20)
+check("迷你版：2 只 × 3 步 = 6 条；6 ÷ 2 = 3 条一份；2 份 × 2 遍 = 4 次更新，每条用 2 次",
+      2 * 3 == 6 and 6 // 2 == 3 and 2 * 2 == 4)
+check("手乘（字面值重算）：4096 × 20 = 81,920，4096 × 4 = 16,384，81,920 + 16,384 = 98,304；对半再对半：98,304 ÷ 2 = 49,152，49,152 ÷ 2 = 24,576",
+      4096 * 20 == 81_920 and 4096 * 4 == 16_384 and 81_920 + 16_384 == 98_304 == 4096 * (20 + 4)
+      and 98_304 // 2 == 49_152 and 49_152 // 2 == 24_576)
+try:
+    from tensordict import TensorDict as _TD
+    from rsl_rl.storage.rollout_storage import RolloutStorage
+except ImportError:
+    RolloutStorage = None
+if RolloutStorage is None:
+    print("  （当前 Python 环境里没有 rsl_rl，跳过“真发一次牌”；用 uv run 运行就有）")
+else:
+    def deal(n_envs, n_steps, n_mb, n_epochs):
+        """用 rsl_rl 自己的 mini_batch_generator 发一次牌：每条记录的编号存在 values 里，数每份有谁、每条被用了几次。"""
+        torch.manual_seed(0)
+        st = RolloutStorage("rl", n_envs, n_steps, _TD({"actor": torch.zeros(n_envs, 1)}, batch_size=[n_envs]), [1])
+        st.values = torch.arange(n_envs * n_steps, dtype=torch.float64).reshape(n_steps, n_envs, 1)
+        st.distribution_params = (torch.zeros(n_steps, n_envs, 1), torch.ones(n_steps, n_envs, 1))
+        ids = [b.values.view(-1).long() for b in st.mini_batch_generator(n_mb, n_epochs)]
+        uses = torch.bincount(torch.cat(ids), minlength=n_envs * n_steps)
+        same_split = all(torch.equal(ids[e * n_mb + i], ids[i]) for e in range(n_epochs) for i in range(n_mb))
+        return len(ids), [len(x) for x in ids], uses, same_split
+
+    n_mini, sizes_mini, uses_mini, same_mini = deal(2, 3, 2, 2)
+    n_real, sizes_real, uses_real, same_real = deal(N_ENVS, N_STEPS, N_MB, N_EPOCHS)
+    print(f"rsl_rl 真发一次牌：迷你版 {n_mini} 份、每份 {sizes_mini[0]} 条、每条用 {int(uses_mini.min())}–{int(uses_mini.max())} 次；"
+          f"项目规模 {n_real} 份、每份 {sizes_real[0]:,} 条、每条用 {int(uses_real.min())}–{int(uses_real.max())} 次")
+    check("rsl_rl 的 mini_batch_generator 真发一次：迷你版 4 份 × 3 条、每条正好 2 次；项目规模 20 份 × 24,576 条、每条正好 5 次",
+          n_mini == 4 and set(sizes_mini) == {3} and bool((uses_mini == 2).all())
+          and n_real == 20 and set(sizes_real) == {24_576} and bool((uses_real == 5).all()))
+    check("开头只洗一次牌：5 遍里，第 k 份每一遍都是同一批记录（迷你版和项目规模都是）", same_mini and same_real)
 # 每次更新都用当前网络，对旧动作 0.5 重新求高度（13.2 节那两口钟）
 check("重算的是“新钟在旧动作 0.5 处的高度”：比率还是 13.2 节的 1.0833", round(bell(A_REC, MU_NEW, SIG) / bell(A_REC, MU_OLD, SIG), 4) == 1.0833)
 check("自测：切 8 份、过 10 遍：98,304 ÷ 8 = 12,288 条一份，8 × 10 = 80 次更新", batch // 8 == 12_288 and 8 * 10 == 80)
@@ -909,6 +1211,13 @@ if ppo_path and ppo_path.is_file():
     stor_text = stor_path.read_text(encoding="utf-8") if stor_path.is_file() else ""
     check("rsl_rl/storage/rollout_storage.py：每份 = 总条数 // 份数（98,304 // 4 = 24,576）",
           "mini_batch_size = batch_size // num_mini_batches" in stor_text)
+    gen_at = stor_text.find("    def mini_batch_generator(")
+    check("rsl_rl/storage/rollout_storage.py 的 mini_batch_generator()：先洗一次牌（randperm），再进“5 遍 × 4 份”的两层循环（13.6 节）",
+          gen_at >= 0 and lines_in_order(stor_text[gen_at:], [
+              "indices = torch.randperm(num_mini_batches * mini_batch_size, requires_grad=False, device=self.device)",
+              "for epoch in range(num_epochs):",
+              "for i in range(num_mini_batches):",
+              "batch_idx = indices[start:stop]"]))
     log_path = rsl_dir / "utils" / "logger.py"
     log_text = log_path.read_text(encoding="utf-8") if log_path.is_file() else ""
     check("rsl_rl/utils/logger.py：训练日志印“Mean surrogate loss:”，wandb 里叫 Loss/surrogate",

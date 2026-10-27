@@ -10,8 +10,11 @@
 from __future__ import annotations
 
 import importlib.util
+import inspect
 import math
-from copy import deepcopy
+import re
+from collections import Counter
+from copy import copy, deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -23,13 +26,18 @@ from _draw import (BLUE, CELL, CELL_EDGE, CELL_HOT, FAINT, FS_SMALL, FS_STEP, FS
                    panel_note, panel_title, plt)
 
 # ---------------------------------------------------------------------------
-banner("1. 走路任务的 7 项课程：每一项起步是什么、最后变成什么")
+banner("1. 为什么先易后难（两笔账），以及走路任务的 7 项课程")
 from mjlab_microduck.tasks.microduck_velocity_env_cfg import (  # noqa: E402
     NUM_STEPS_PER_ENV,
+    MicroduckRlCfg,
     make_microduck_velocity_env_cfg,
 )
 
 cfg = make_microduck_velocity_env_cfg()
+VEL_SRC_PATH = Path(inspect.getsourcefile(make_microduck_velocity_env_cfg))   # 配置文件本身（第 2、10 节读它的原文）
+DT = round(cfg.decimation * cfg.sim.mujoco.timestep, 6)   # 一个环境步 = decimation × 物理步（都从 cfg 读）
+EPISODE_S = cfg.episode_length_s                          # 配置里的回合时长
+EPISODE_STEPS = round(EPISODE_S / DT)                     # 活满一整回合是多少个环境步
 
 
 def stages_of(name: str) -> list[dict]:
@@ -77,7 +85,7 @@ NAMES = ["action_rate_weight", "head_pose_bias_weight", "standing_envs",
 WHAT = {
     "action_rate_weight": "动作平滑惩罚的权重",
     "head_pose_bias_weight": "头部下垂惩罚的权重",
-    "standing_envs": "拿到全零速度命令的比例",
+    "standing_envs": "抽中“站着别动”的比例",
     "com_range": "躯干质心随机偏移的范围（m）",
     "head_com_range": "头部质心随机偏移的范围（m）",
     "head_pose_range": "4 个头部命令的抽签范围",
@@ -103,18 +111,90 @@ print(f"  速度命令的范围（固定，不在课程里）：前后 {twist.ra
 check("速度命令范围从头到尾就是 ±0.4 / ±0.3 / ±1.0",
       twist.ranges.lin_vel_x == (-0.4, 0.4) and twist.ranges.lin_vel_y == (-0.3, 0.3)
       and twist.ranges.ang_vel_z == (-1.0, 1.0))
-check(f"其余设定都不在课程里：{len(cfg.rewards)} 项奖励、{len(cfg.events)} 个事件、{len(cfg.commands)} 组命令（正文写的是 16 / 13 / 3）",
+check(f"配置里一共 {len(cfg.rewards)} 项奖励、{len(cfg.events)} 个事件、{len(cfg.commands)} 组命令（正文写的是 16 / 13 / 3）",
       len(cfg.rewards) == 16 and len(cfg.events) == 13 and len(cfg.commands) == 3)
+cur_rewards = {cfg.curriculum[n].params["reward_name"] for n in NAMES if "reward_name" in cfg.curriculum[n].params}
+cur_events = {cfg.curriculum[n].params["event_name"] for n in NAMES if "event_name" in cfg.curriculum[n].params}
+check(f"课程只碰 {len(cur_rewards)} 项奖励的权重、{len(cur_events)} 个事件的范围：另外 16 − 2 = 14 项奖励、13 − 2 = 11 个事件从头到尾不变",
+      len(cur_rewards) == 2 and len(cur_events) == 2 and len(cfg.rewards) - len(cur_rewards) == 14
+      and len(cfg.events) - len(cur_events) == 11)
 check("每一项的阶梯都按环境步从小到大写（源码取“最后一个满足的档”，顺序写反就全错）",
       all([s["step"] for s in stages_of(n)] == sorted(s["step"] for s in stages_of(n)) for n in NAMES))
+check("读表：第一次换档（圈）= 第二档的门槛 ÷ 24，12,000 ÷ 24 = 500；质心 0.003 m × 1000 = 3 mm",
+      stages_of("action_rate_weight")[1]["step"] == 12000 and 12000 / 24 == 500 and round(0.003 * 1000, 6) == 3)
+
+print("\n18.1 第一笔账：2026-08 那次事故（每步的“函数值 × 权重”；实测数抄自配置注释，第 10 节核对注释还在）")
+AIR_WALK, AIR_STAND, TAX_WALK = 1.01, 0.02, 0.77
+air_max = cfg.rewards["air_time"].weight * 2              # 两只脚各 1 分
+print(f"  一直走：{AIR_WALK} + (−{TAX_WALK}) = {AIR_WALK - TAX_WALK:.2f}；站着不动：{AIR_STAND} + 0 = {AIR_STAND}；"
+      f"税占迈步收入 {TAX_WALK} ÷ {AIR_WALK} = {TAX_WALK / AIR_WALK:.2f}；迈步满分 {num(air_max)}")
+check("迈步 air_time 每步最多 3 × 2 = 6 分（权重从 cfg 读）", air_max == 6.0 and 3 * 2 == 6)
+check("迈步算分的腾空窗口是 0.125–0.3 秒（cfg）", cfg.rewards["air_time"].params["threshold_min"] == 0.125
+      and cfg.rewards["air_time"].params["threshold_max"] == 0.3)
+check("账表：1.01 + (−0.77) = 0.24；0.02 + 0 = 0.02；走路这两项多出 0.24 − 0.02 = 0.22",
+      round(AIR_WALK - TAX_WALK, 2) == 0.24 and round(1.01 + -0.77, 2) == 0.24 and round(0.24 - 0.02, 2) == 0.22)
+check("税吃掉迈步收入的 0.77 ÷ 1.01 ≈ 0.76（76%）", round(TAX_WALK / AIR_WALK, 2) == 0.76)
+
+print("\n18.1 第二笔账：开训时光噪声就让动作平滑这一项每步多大（±σ 的“硬币”噪声，相邻两步四种组合）")
+SIGMA0 = MicroduckRlCfg.actor.distribution_cfg["init_std"]   # 策略抽动作时那口钟的初始宽度 σ（第 4 章 4.7 节）
+N_JOINTS = 14                                                 # 14 个舵机，每步的动作是 14 个数
+coin = [(last, this, this - last, (this - last) ** 2) for last in (SIGMA0, -SIGMA0) for this in (SIGMA0, -SIGMA0)]
+def signed(v) -> str:
+    """带正负号：+1、−2、0。"""
+    return "0" if v == 0 else f"{v:+g}".replace("-", "−")
+
+
+table(["上一步的噪声", "这一步的噪声", "这一步 − 上一步", "差的平方"], [[signed(a), signed(b), signed(d), f"{q:g}"] for a, b, d, q in coin])
+per_joint = sum(q for *_, q in coin) / 4
+noise_cost = N_JOINTS * per_joint
+check("σ 从训练配置里读出来是 1.0（开训时的值）", SIGMA0 == 1.0)
+check("±1 噪声四格：差 0、−2、+2、0，平方 0、4、4、0，平均 (0 + 4 + 4 + 0) ÷ 4 = 2；(−1) − (+1) = −2，(−2) × (−2) = 4",
+      [d for _, _, d, _ in coin] == [0, -2, 2, 0] and [q for *_, q in coin] == [0, 4, 4, 0] and per_joint == 2
+      and (-1) - (+1) == -2 and (-2) * (-2) == 4 and (0 + 4 + 4 + 0) / 4 == 2)
+check("14 个关节加起来：14 × 2 = 28", noise_cost == 28 and 14 * 2 == 28)
+pairs = np.random.default_rng(18).standard_normal((100_000, 2))
+gauss_mean = float(np.mean((pairs[:, 1] - pairs[:, 0]) ** 2))
+print(f"  换成钟形噪声：10 万对相邻两步，差的平方平均 = {gauss_mean:.3f}（理论值 2 = 1 + 1）")
+check(f"钟形噪声 10 万对：差的平方平均印成 {gauss_mean:.3f}（正文写的是 1.995）", round(gauss_mean, 3) == 1.995)
+check("钟形噪声：和理论值 2 相差不到 0.03（换种子也成立）", abs(gauss_mean - 2) < 0.03)
+
+TASK_KMAX = {"track_linear_velocity": 1, "track_angular_velocity": 1, "upright": 1, "pose": 1, "air_time": 2,
+             "head_pose_tracking": 1}                        # 六项任务奖励各自核的最大值（air_time 是两只脚，所以是 2）
+best = sum(cfg.rewards[n].weight * k for n, k in TASK_KMAX.items())
+w0, w_last = value_of(stages_of("action_rate_weight")[0]), value_of(stages_of("action_rate_weight")[-1])
+table(["动作平滑的权重", "光噪声就要扣（每步）", "六项奖励全拿满（每步）", "拿满了还剩"],
+      [[wstr(w), f"{noise_cost:g} × {abs(w):.1f} = {noise_cost * abs(w):g}", f"{best:g}",
+        f"{best:g} − {noise_cost * abs(w):g} = {sgn(best - noise_cost * abs(w), 1)}"] for w in (w0, w_last)])
+check("六项任务奖励的满分（权重从 cfg 读）：2 + 2 + 2 + 1 + 6 + 2 = 15", best == 15 and 2 + 2 + 2 + 1 + 6 + 2 == 15)
+check("−0.1：28 × 0.1 = 2.8，15 − 2.8 = 12.2；−1.0：28 × 1.0 = 28，15 − 28 = −13",
+      w0 == -0.1 and w_last == -1.0 and round(noise_cost * abs(w0), 1) == 2.8 and round(15 - 2.8, 1) == 12.2
+      and noise_cost * abs(w_last) == 28 and 15 - 28 == -13)
+check("2.8 还不到 15 的五分之一：2.8 ÷ 15 ≈ 0.19", round(2.8 / 15, 2) == 0.19 and 2.8 / 15 < 0.2)
+
+ARCH_READ, ARCH_LEN = -0.1028, 35.21                      # 第 14 章存档：action_rate_l2 的读数、回合平均步数
+arch_raw = ARCH_READ * EPISODE_S / (w0 * DT * ARCH_LEN)
+print(f"  进阶：存档倒推 {sgn(ARCH_READ)} × {num(EPISODE_S)} = {sgn(ARCH_READ * EPISODE_S, 3)}；"
+      f"(−0.1) × {num(DT, 2)} × {ARCH_LEN} = {sgn(w0 * DT * ARCH_LEN, 5)}；相除 ≈ {arch_raw:.1f}")
+check("进阶（字面值）：−0.1028 × 20 = −2.056；(−0.1) × 0.02 × 35.21 = −0.07042；−2.056 ÷ (−0.07042) ≈ 29.2",
+      round(-0.1028 * 20, 3) == -2.056 and round(-0.1 * 0.02 * 35.21, 5) == -0.07042
+      and round(-2.056 / -0.07042, 1) == 29.2 and round(arch_raw, 1) == 29.2)
+check("进阶：倒推出的 29.2 比纯噪声的 28 多一点（网络算的均值本身也在变）", 28 < arch_raw < 31)
+half = [(this - last) ** 2 for last in (0.5, -0.5) for this in (0.5, -0.5)]
+check("自测：±0.5 噪声，平方 0、1、1、0，平均 0.5；14 × 0.5 = 7；按 −1.0 扣 7、按 −0.1 扣 0.7；28 → 7 是四分之一（0.5 × 0.5 = 0.25）",
+      half == [0, 1, 1, 0] and sum(half) / 4 == 0.5 and 14 * 0.5 == 7 and round(7 * 0.1, 1) == 0.7 and 28 / 7 == 4
+      and 0.5 * 0.5 == 0.25 and math.isclose(2 * 0.5**2, 0.5))
+check("头部命令的最终范围 ±1.40 rad：1.40 × 57.3 ≈ 80°", round(1.40 * 57.3) == 80)
 
 # ---------------------------------------------------------------------------
 banner("2. 尺子与阶梯函数：迭代 × 24 = 环境步；两档之间一动不动")
 # 一次迭代里每只机器人走几步。“改一改”第 1 条改这一行。
 STEPS_PER_ITER = NUM_STEPS_PER_ENV  # TWEAK-1: 48
 
-print(f"配置里的 NUM_STEPS_PER_ENV = {NUM_STEPS_PER_ENV}（每次迭代每只机器人走的环境步数）")
+print(f"训练配置里的 MicroduckRlCfg.num_steps_per_env = {MicroduckRlCfg.num_steps_per_env}（一圈每只机器人真正走几步）")
+print(f"配置文件开头的 NUM_STEPS_PER_ENV = {NUM_STEPS_PER_ENV}（两个权重课程的门槛用它乘）")
 print(f"本节用的尺子 STEPS_PER_ITER = {STEPS_PER_ITER}")
+check("一圈几步（训练配置的 num_steps_per_env）和 NUM_STEPS_PER_ENV 眼下都是 24",
+      MicroduckRlCfg.num_steps_per_env == 24 == NUM_STEPS_PER_ENV)
 rows = [[it, it * STEPS_PER_ITER, f"{it} × {STEPS_PER_ITER} = {it * STEPS_PER_ITER}"]
         for it in (500, 600, 750, 1000, 1500, 2000)]
 table(["圈（迭代）", "环境步", "手算"], rows)
@@ -122,6 +202,14 @@ check(f"课程表上的“第 500 圈”= {500 * STEPS_PER_ITER} 个环境步（
       500 * STEPS_PER_ITER == 12000)
 check(f"第 600 圈 = {600 * STEPS_PER_ITER:,} 个环境步（正文写的是 14,400）", 600 * STEPS_PER_ITER == 14400)
 check(f"最后一档的第 2000 圈 = {2000 * STEPS_PER_ITER:,} 个环境步（正文写的是 48,000）", 2000 * STEPS_PER_ITER == 48000)
+check("反过来除：门槛 18,000 步 ÷ 24 = 第 750 圈", 18000 / 24 == 750)
+vel_src = VEL_SRC_PATH.read_text(encoding="utf-8")
+n_named = len(re.findall(r'"step":\s*\d+\s*\*\s*NUM_STEPS_PER_ENV', vel_src))
+n_literal = len(re.findall(r'"step":\s*\d+\s*\*\s*24\b', vel_src))
+print(f"配置文件里门槛的两种写法：“圈数 * NUM_STEPS_PER_ENV” {n_named} 处（两个权重课程），“圈数 * 24” 写死的 {n_literal} 处（另外四项）")
+check("两种写法：两个权重课程 5 + 3 = 8 处用 NUM_STEPS_PER_ENV，另外四项 5 + 4 + 3 + 2 = 14 处写死 24；一圈几步也写死成 num_steps_per_env=24",
+      n_named == 8 == 5 + 3 and n_literal == 14 == 5 + 4 + 3 + 2 and "num_steps_per_env=24," in vel_src)
+check("⚠️ 只把一圈改成 48 步：门槛还是 12,000 步，12,000 ÷ 48 = 第 250 圈", 12000 / 48 == 250)
 
 
 def stage_value(stages: list[dict], step: int, strict: bool = True):
@@ -150,6 +238,27 @@ RAMP_625 = -0.2 + (-0.4 + 0.2) * (625 - 500) / (750 - 500)   # 500→750 圈按�
 print("  “斜坡”版本（代码里没有这回事）：如果 500→750 圈之间按直线插值，第 625 圈会是",
       wstr(RAMP_625), "——实际是", wstr(stage_value(act_stages, 625 * STEPS_PER_ITER)))
 check("斜线上第 625 圈会读成 −0.3（正文和图里打叉的那个数）", round(RAMP_625, 2) == -0.3)
+check("字面值：625 是正中间 (500 + 750) ÷ 2 = 625，斜线上是两头的平均 (−0.2 + (−0.4)) ÷ 2 = −0.3",
+      (500 + 750) / 2 == 625 and round((-0.2 + -0.4) / 2, 2) == -0.3)
+
+q625 = 625 * STEPS_PER_ITER
+trace, w_now = [], value_of(act_stages[0])
+for k, s in enumerate(act_stages):                         # 照 18.2 节那段 JS：从第 0 档起逐档比 >
+    passed = q625 > s["step"]
+    if passed:
+        w_now = value_of(s)
+    trace.append([f"第 {k} 档", s["step"], "是" if passed else "否", wstr(w_now)])
+print(f"\n逐档追踪：第 625 圈开始时是第 {q625} 步")
+table(["档", "门槛（环境步）", f"{q625} > 门槛？", "查完这一档，w 是"], trace)
+rev = list(reversed(act_stages))                           # 把清单倒过来写，同样从上往下查
+w_rev = value_of(rev[0])
+for s in rev:
+    if q625 > s["step"]:
+        w_rev = value_of(s)
+print(f"  清单倒过来写再查一遍：w = {wstr(w_rev)}")
+check("第 625 圈开始时是 625 × 24 = 15,000 步；逐档查：前两档“是”、后四档“否”，最后 w = −0.2",
+      q625 == 15000 and [t[2] for t in trace] == ["是", "是", "否", "否", "否", "否"] and w_now == -0.2)
+check("清单倒过来写：最后一个“过了”的变成第 0 档，查出 −0.1，错了一档", w_rev == -0.1)
 check("18.2 节自测：第 1300 圈查出来是 −0.8（第 1250 档生效、第 1500 档还没到）",
       stage_value(act_stages, 1300 * STEPS_PER_ITER) == -0.8)
 check(f"18.2 节自测：1300 × {STEPS_PER_ITER} = {1300 * STEPS_PER_ITER:,} 个环境步（正文写的是 31,200）",
@@ -254,16 +363,46 @@ check("偏 15° 要交的分是偏 2° 的 7.5 倍（15 ÷ 2）",
       round(math.radians(15) / math.radians(2), 2) == 7.5)
 check("字面值重算：0.2618 × 3 = 0.79，0.0349 × 3 = 0.10",
       round(0.2618 * 3, 2) == 0.79 and round(0.0349 * 3, 2) == 0.10)
+check("迷你版：两个关节变了 0.1 和 −0.2，0.1² + (−0.2)² = 0.01 + 0.04 = 0.05",
+      round(0.1**2 + (-0.2) ** 2, 6) == 0.05 and round(0.01 + 0.04, 6) == 0.05)
+check("读表：18,000 ÷ 24 = 750，14,400 ÷ 24 = 600；先翻倍到 −0.2、之后每档再负 0.2；最后一档是起步的 (−1.0) ÷ (−0.1) = 10 倍",
+      18000 / 24 == 750 and 14400 / 24 == 600 and act_w[1] == 2 * act_w[0]
+      and all(math.isclose(b - a, -0.2) for a, b in zip(act_w[1:], act_w[2:])) and round(act_w[-1] / act_w[0], 6) == 10)
+TAU = cfg.rewards["head_pose_bias"].params["tau_s"]
+alpha = DT / TAU
+check(f"1 秒平均（tau_s = {num(TAU)} 秒）：每步新的一步占 0.02 ÷ 1 = 2%，旧的平均留 98%；+0.2、−0.2 来回摆，平均是 0",
+      TAU == 1.0 and round(alpha, 6) == 0.02 and round(1 - alpha, 6) == 0.98 and (0.2 - 0.2 + 0.2 - 0.2) / 4 == 0)
+check("函数自带负号：(−0.2618) × 3 = −0.79，(−0.0349) × 3 = −0.10；另一种写法 0.05 × (−0.1) = −0.005",
+      round(-0.2618 * 3, 2) == -0.79 and round(-0.0349 * 3, 2) == -0.10 and round(0.05 * -0.1, 6) == -0.005
+      and round(-math.radians(15) * 3.0, 2) == -0.79)
+check("7.5 倍：不舍入的 0.7854 ÷ 0.1047 → 7.5；印出来的 0.79 ÷ 0.10 = 7.9（两个数各自舍入过）；平方的话 7.5 × 7.5 = 56.25",
+      round(math.radians(15) * 3, 4) == 0.7854 and round(math.radians(2) * 3, 4) == 0.1047
+      and round(0.7854 / 0.1047, 1) == 7.5 and round(0.79 / 0.10, 1) == 7.9 and 7.5 * 7.5 == 56.25)
 
 # ---------------------------------------------------------------------------
 banner("4. 五个范围课程：考题范围从多小放宽到多大")
 st = stages_of("standing_envs")
-print("\n  standing_envs（拿到“全零速度命令”的比例；4096 只机器人里平均有几只）")
+print("\n  standing_envs（抽中“站着别动”的比例；4096 只机器人里平均有几只）")
 table(["环境步", "= 第几圈", "比例", "4096 只里约几只"],
       [[s["step"], s["step"] // STEPS_PER_ITER, num(value_of(s)), round(value_of(s) * 4096)] for s in st])
 check("站立比例从 2% 涨到 25%", value_of(st[0]) == 0.02 and value_of(st[-1]) == 0.25)
 check("2% 的 4096 只 ≈ 82 只，25% 的 4096 只 = 1024 只",
       round(0.02 * 4096) == 82 and 0.25 * 4096 == 1024)
+check("读表：4096 × 0.02 = 81.92 ≈ 82；4096 × 0.05 = 204.8 ≈ 205；4096 × 0.25 = 1024",
+      round(4096 * 0.02, 2) == 81.92 and round(4096 * 0.05, 1) == 204.8 and round(4096 * 0.05) == 205 and 4096 * 0.25 == 1024)
+TURN = twist.rel_turn_in_place_envs
+print(f"  速度命令每 {twist.resampling_time_range[0]:g}–{twist.resampling_time_range[1]:g} 秒重抽一次；"
+      f"抽中站着的，还有 {TURN:.0%} 的机会被原地转的桶改走")
+check(f"速度命令每 3–8 秒重抽一次（cfg：{twist.resampling_time_range}）", twist.resampling_time_range == (3.0, 8.0))
+eff0, eff_last = value_of(st[0]) * (1 - TURN), value_of(st[-1]) * (1 - TURN)
+check("被原地转的桶拿走 15% 以后：0.02 × 0.85 = 0.017，4096 × 0.017 ≈ 70；0.25 × 0.85 = 0.2125，4096 × 0.2125 ≈ 870",
+      TURN == 0.15 and round(1 - TURN, 2) == 0.85 and round(eff0, 4) == 0.017 and round(4096 * 0.017) == 70
+      and round(eff_last, 4) == 0.2125 and round(4096 * 0.2125) == 870)
+rng_cmd = np.random.default_rng(4)
+u_stand, u_turn = rng_cmd.random(1_000_000), rng_cmd.random(1_000_000)
+sim_frac = float(np.mean((u_stand <= 0.25) & ~(u_turn < TURN)))   # 照源码的先后：先按比例抽中站着，再被转圈的桶拿走一部分
+check(f"照源码的先后抽 100 万次（比例 0.25）：最后还站着的占 {sim_frac:.4f}，和 0.25 × 0.85 = 0.2125 相差不到 0.002",
+      abs(sim_frac - 0.2125) < 0.002)
 
 for name in ("com_range", "head_com_range"):
     st = stages_of(name)
@@ -284,7 +423,7 @@ for s in head_stages:
     rows.append([s["step"] // STEPS_PER_ITER, f"±{num(r[0][1])}", f"±{num(r[2][1])}", f"±{num(r[3][1])}",
                  f"{round(100 * r[2][1] / final[2][1])}%"])
 table(["圈", "颈俯仰 = 头俯仰", "头偏航", "头横滚", "头偏航占最终的"], rows)
-check("最后一档就是第 8 章 8.2 节说的 ±1.10 / ±1.10 / ±1.40 / ±0.31 rad",
+check("最后一档就是第 15 章 15.5 节命令表里的上限 ±1.10 / ±1.10 / ±1.40 / ±0.31 rad（第 8 章 8.2 节也提过）",
       [max(abs(lo), abs(hi)) for lo, hi in final] == [1.10, 1.10, 1.40, 0.31])
 check("最后一档从第 2000 圈起", head_stages[-1]["step"] // STEPS_PER_ITER == 2000)
 check("头偏航这一列正好是最终范围的 5%、15%、35%、65%、100%",
@@ -298,6 +437,11 @@ check("18.4 节自测：第 1200 圈头偏航 ±0.49 rad ≈ ±28°，躯干质�
       and round(0.49 * 57.3) == 28
       and round(stage_value(stages_of("com_range"), 1200 * STEPS_PER_ITER) * 1000) == 10)
 check("每一档颈俯仰和头俯仰都一样", all(value_of(s)[0] == value_of(s)[1] for s in head_stages))
+check("旧课程的三档上限 0.015 → 0.02 → 0.03 m，就是 15 → 20 → 30 mm", [round(v * 1000) for v in (0.015, 0.02, 0.03)] == [15, 20, 30])
+check("头部表：0.21 ÷ 1.40 = 0.15；颈俯仰 0.17 ÷ 1.10 ≈ 0.155；起步 ±0.07 rad：0.07 × 57.3 ≈ 4.0°",
+      round(0.21 / 1.40, 2) == 0.15 and round(0.17 / 1.10, 3) == 0.155 and round(0.07 * 57.3, 1) == 4.0)
+check("身体命令：0.005 m = 5 mm；0.05 rad：0.05 × 57.3 ≈ 2.9°；死权重的迷你版 −6 × 0 = 0",
+      round(0.005 * 1000, 6) == 5 and round(0.05 * 57.3, 1) == 2.9 and -6 * 0 == 0)
 body = stages_of("body_pose_range")
 print("\n  body_pose_range（6 个身体命令的抽签范围）：只有一档，永远不换 →", value_of(body[0]))
 switch_iters = sorted({s["step"] // STEPS_PER_ITER for n in NAMES for s in stages_of(n) if s["step"] > 0})
@@ -362,10 +506,11 @@ stand_pairs = [(s["step"] // STEPS_PER_ITER, value_of(s)) for s in stages_of("st
 draw_steps(ax, stand_pairs, ORANGE, "")
 ax.set_ylim(0, 0.30)
 ax.set_yticks([0, 0.05, 0.10, 0.15, 0.20, 0.25])
-ax.text(40, 0.075, f"2%：4096 只里约 {round(0.02 * 4096)} 只", fontsize=FS_TICK, color=ORANGE)
-ax.text(1180, 0.268, f"25%：约 {round(0.25 * 4096)} 只", fontsize=FS_TICK, color=ORANGE)
-panel_title(fig, [ax], "② 拿到“全零速度命令”的比例：2% → 25%")
-panel_note(fig, [ax], "站着别动是真机上最常见的命令，可它得等会走路了再大量练。")
+ax.text(40, 0.122, f"2%：4096 × 0.02 ≈ {round(0.02 * 4096)} 只", fontsize=FS_TICK, color=ORANGE)
+ax.text(1000, 0.268, f"25%：4096 × 0.25 = {round(0.25 * 4096)} 只", fontsize=FS_TICK, color=ORANGE)
+panel_title(fig, [ax], "② 抽中“站着别动”的比例：2% → 25%")
+panel_note(fig, [ax], "站着别动是真机上最常见的命令，可它得等会走路了再大量练。\n"
+                       "抽中的里面，还有 15% 会被原地转圈的桶改走（18.4 节）。")
 
 ax = timeline_axes(2, "±毫米", marks_of("com_range", "head_com_range"))
 draw_steps(ax, [(s["step"] // STEPS_PER_ITER, value_of(s) * 1000) for s in stages_of("com_range")], BLUE, "躯干质心", lw=4.8)
@@ -414,14 +559,28 @@ check("复印出来的内容一样", wall["action_rate_l2"].weight == manager["a
 check("但不是同一个对象（deepcopy 连里面的对象也复印了一份）",
       wall["action_rate_l2"] is not manager["action_rate_l2"])
 
+same = wall                                             # 不复印：同一个对象多起一个名字（命令管理器的 self.cfg = cfg）
 wall["action_rate_l2"].weight = -0.2                    # ✗ 改 env.cfg
 print("改了 env.cfg 之后：env.cfg =", wstr(wall["action_rate_l2"].weight),
-      "，管理器手里 =", wstr(manager["action_rate_l2"].weight), "← 训练用的是这一个")
+      "，管理器手里 =", wstr(manager["action_rate_l2"].weight), "← 训练用的是这一个",
+      "；不复印、只起别名的那份 =", wstr(same["action_rate_l2"].weight))
 check("写 env.cfg 是静默的无操作：管理器手里那份还是 −0.1", manager["action_rate_l2"].weight == -0.1)
+check("不复印、只多起一个名字（引用）：两个名字是同一个对象，改一边另一边跟着变成 −0.2",
+      same is wall and same["action_rate_l2"].weight == -0.2)
 
 manager["action_rate_l2"].weight = -0.2                 # ✓ 改管理器手里那份（get_term_cfg）
 print("改了管理器手里那份之后：管理器手里 =", wstr(manager["action_rate_l2"].weight))
 check("通过 get_term_cfg 改，才真的改到了训练用的那份", manager["action_rate_l2"].weight == -0.2)
+
+nested = {"rewards": {"action_rate_l2": TermCfg(weight=-0.1)}}   # 一层套一层，像 env.cfg
+shallow = copy(nested)                                            # 浅复印：只复印最外层（JS 的 { ...cfg }）
+deep = deepcopy(nested)                                           # 深复印：每一层都复印
+nested["rewards"]["action_rate_l2"].weight = -0.2                 # 改原件里面那一层
+print("进阶：改原件里面那一层之后，浅复印读到", wstr(shallow["rewards"]["action_rate_l2"].weight),
+      "，深复印读到", wstr(deep["rewards"]["action_rate_l2"].weight))
+check("进阶：浅复印只复印最外层，里面那层还是同一个对象，跟着变成 −0.2；深复印还是 −0.1",
+      shallow is not nested and shallow["rewards"] is nested["rewards"]
+      and shallow["rewards"]["action_rate_l2"].weight == -0.2 and deep["rewards"]["action_rate_l2"].weight == -0.1)
 
 # ---------------------------------------------------------------------------
 banner("5b. 画图：figures/ch18_live_cfg.png（改哪一份）")
@@ -488,6 +647,19 @@ check(f"而同一步上权重还没换（第 {prev_last} 步的权重应当还�
 print(f"  一圈 {STEPS_PER_ITER} 步，两种写法差的就是这 1 步：{round(100 / STEPS_PER_ITER, 1)}% 圈。")
 print("  还有一处 1 步的零头：mjlab 先加计数器、再结账、最后才在重置流程里调用课程，"
       "所以换档那一步的奖励仍按旧权重结账。")
+check("第 k 圈 = 第 k × 24 + 1 到 (k + 1) × 24 步：500 × 24 + 1 = 12,001，501 × 24 = 12,024；499 × 24 + 1 = 11,977",
+      500 * 24 + 1 == 12001 and 501 * 24 == 12024 and 499 * 24 + 1 == 11977)
+check("> 和 >=：12,000 > 12,000 不成立，12,001 > 12,000 成立，12,000 >= 12,000 成立",
+      (not 12000 > 12000) and 12001 > 12000 and 12000 >= 12000)
+funcs = Counter(cfg.curriculum[n].func.__name__ for n in NAMES)
+print("  7 项课程由 4 个课程函数驱动：", dict(sorted(funcs.items())))
+check("4 个课程函数分 7 项：reward_weight 2、com_range_curriculum 2、pose_command_range_curriculum 2、standing_envs_curriculum 1（2 + 2 + 2 + 1 = 7）",
+      funcs == {"reward_weight": 2, "com_range_curriculum": 2, "pose_command_range_curriculum": 2,
+                "standing_envs_curriculum": 1} and 2 + 2 + 2 + 1 == 7)
+check(f"一只都不摔、回合最长 {EPISODE_STEPS} 步：4096 只错开到点，平均每步 4096 ÷ 1000 ≈ 4 只重置；只有一只时最长等 {num(EPISODE_S)} 秒",
+      EPISODE_STEPS == 1000 and round(4096 / 1000) == 4 and EPISODE_S == 20)
+check("自测：只改一圈 48 步 → 12,000 ÷ 48 = 250；连 NUM_STEPS_PER_ENV 也改 → 500 × 48 = 24,000，24,000 ÷ 48 = 500",
+      12000 / 48 == 250 and 500 * 48 == 24000 and 24000 / 48 == 500)
 
 # ---------------------------------------------------------------------------
 banner("7. wandb 上的 Curriculum/*：课程函数返回什么，那条曲线就是什么")
@@ -512,14 +684,21 @@ check("Curriculum/head_pose_range 报的是 4 个范围里最大的那个上限�
       round(reading("head_pose_range", 0), 4) == 0.07 and max_abs(value_of(head_stages[0])) == 0.07)
 check("Curriculum/body_pose_range 从头到尾都是 0.05（6 项里最大的那个）",
       reading("body_pose_range", 0) == 0.05 and reading("body_pose_range", 10**6) == 0.05)
+check("读数的单位：质心范围是米，0.015 × 1000 = 15 mm", round(0.015 * 1000, 6) == 15)
+first_head, second_head = max_abs(value_of(head_stages[0])), max_abs(value_of(head_stages[1]))
+mixed = (23 * first_head + second_head) / 24
+print(f"进阶：第 499 圈前 23 步记 {num(first_head)}、最后 1 步记 {num(second_head)}，"
+      f"这一圈平均 ({num(23 * first_head)} + {num(second_head)}) ÷ 24 = {mixed:.4f}")
+check("进阶：(23 × 0.07 + 0.21) ÷ 24 = 1.82 ÷ 24 ≈ 0.0758；23 × 0.07 = 1.61",
+      round(mixed, 4) == 0.0758 and round(23 * 0.07, 2) == 1.61 and round(1.61 + 0.21, 2) == 1.82 and round(1.82 / 24, 4) == 0.0758)
+check(f"进阶：活满 {num(EPISODE_S)} 秒的回合是 {EPISODE_STEPS} 步，1000 ÷ 24 ≈ 41.7，约 42 圈",
+      round(EPISODE_STEPS / 24) == 42 and round(1000 / 24, 1) == 41.7)
 
 # ---------------------------------------------------------------------------
 banner("8. 曲线掉了：先算一张反事实账表")
 # 换档后“动作其实更平滑了”这一栏假设的原始代价。“改一改”第 2 条改这一行。
 RAW_SMOOTHER = 0.03  # TWEAK-2: 0.02
-DT = round(cfg.decimation * cfg.sim.mujoco.timestep, 6)   # 一个环境步 = decimation × 物理步（都从 cfg 读）
-EPISODE_S = cfg.episode_length_s                          # 配置里的回合时长
-EPISODE_STEPS = round(EPISODE_S / DT)                     # 活满一整回合是多少个环境步
+# DT、EPISODE_S、EPISODE_STEPS 在第 1 节已经从 cfg 读出来了
 check(f"从 cfg 读出来：一个环境步 {num(DT, 3)} 秒（decimation {cfg.decimation} × 物理步 {num(cfg.sim.mujoco.timestep, 4)} 秒）",
       DT == 0.02)
 check(f"从 cfg 读出来：一个回合最长 {num(EPISODE_S, 1)} 秒 = {EPISODE_STEPS} 个环境步（正文写的是 20 秒、1000 步）",
@@ -551,6 +730,24 @@ print(f"  要让读数原地不动（还是 −0.005），动作差平方和得�
 check("读数不变的条件：权重翻倍，原始代价减半（0.05 → 0.025）", round(raw_same, 4) == 0.025)
 check("18.8 节自测：换档后读 −0.0075，还原成原始值 −0.0075 ÷ (−0.2) = 0.0375",
       round(-0.0075 / -0.2, 4) == 0.0375)
+check("自测：扣的分多了一半，0.0075 ÷ 0.005 = 1.5 倍", round(0.0075 / 0.005, 6) == 1.5)
+check("约掉：0.02 × 1000 ÷ 20 = 20 ÷ 20 = 1（一步的秒数、一回合的步数、回合秒数都从 cfg 读）",
+      math.isclose(DT * EPISODE_STEPS / EPISODE_S, 1.0) and round(0.02 * 1000, 6) == 20 and 20 / 20 == 1)
+check(f"降了几成：(0.05 − {num(RAW_SMOOTHER, 4)}) ÷ 0.05 = {num((0.05 - RAW_SMOOTHER) / 0.05, 4)}（正文写的是 0.4）",
+      round((0.05 - RAW_SMOOTHER) / 0.05, 4) == 0.4)
+check("读数不变的条件（字面值）：f × (−0.2) = −0.005，两边同时除以 −0.2，f = −0.005 ÷ (−0.2) = 0.025",
+      round(-0.005 / -0.2, 6) == 0.025 and round(0.025 * -0.2, 6) == -0.005)
+check("还原：−0.01 ÷ (−0.2) = 0.05，−0.005 ÷ (−0.1) = 0.05——动作没变", round(-0.01 / -0.2, 6) == 0.05 and round(-0.005 / -0.1, 6) == 0.05)
+
+
+def episode_reward_steps(raw: float, weight: float, steps: int) -> float:
+    """只活了 steps 步的回合：每步 f × 权重 × 0.02，加 steps 步，再除以 20 秒（第 14 章 14.5 节）。"""
+    return raw * weight * DT * steps / EPISODE_S
+
+
+short = episode_reward_steps(0.05, -0.2, round(10 / DT))
+check(f"反例：动作不变、只活 10 秒（{round(10 / DT)} 步）：0.05 × (−0.2) × 0.02 × 500 ÷ 20 = {sgn(short, 5)}，看着和换档前一样",
+      round(10 / DT) == 500 and round(short, 6) == -0.005 and round(0.05 * -0.2 * 0.02 * 500 / 20, 6) == -0.005)
 
 # ---------------------------------------------------------------------------
 banner("8b. 画图：figures/ch18_weight_step_drop.png 和 18.0 节的总览图 ch18_overview.png")
@@ -647,6 +844,19 @@ check(f"{last_iter} × {STEPS_PER_ITER} × {num(DT, 2)} = {num(sim_seconds, 1)} 
       f"（正文写的是 960 秒 = 16 分钟）", round(sim_seconds, 6) == 960 and round(sim_seconds / 60, 1) == 16.0)
 check("按 4000 圈的预算算，课程只占前一半；按 6000 圈算，只占前三分之一",
       round(last_iter / 4000, 2) == 0.5 and round(last_iter / 6000, 4) == round(1 / 3, 4))
+check("字面值：2000 × 24 = 48,000；48,000 × 0.02 = 960；960 ÷ 60 = 16",
+      2000 * 24 == 48000 and round(48000 * 0.02, 6) == 960 and 960 / 60 == 16)
+
+lx, ly, az = twist.ranges.lin_vel_x, twist.ranges.lin_vel_y, twist.ranges.ang_vel_z
+p_x = 0.1 / (lx[1] - lx[0])                       # 前后速度落在 ±0.05 以内：这一段宽 0.1
+p_y = 0.1 / (ly[1] - ly[0])                       # 左右速度落在 ±0.05 以内
+p_w = 2 * (az[1] - 0.4) / (az[1] - az[0])         # 转速超过 0.4（往哪边都算）：两头各一段
+p_spin = p_x * p_y * p_w
+print(f"原地转身（几乎不平移、转得快）的机会：{p_x:.3f} × {p_y:.3f} × {p_w:.1f} = {p_spin:.4f}")
+check("原地转身：0.1 ÷ 0.8 = 0.125，0.1 ÷ 0.6 ≈ 0.167，1.2 ÷ 2 = 0.6；0.125 × 0.167 × 0.6 ≈ 0.0125",
+      round(p_x, 3) == 0.125 and round(p_y, 3) == 0.167 and round(p_w, 6) == 0.6 and round(p_spin, 4) == 0.0125
+      and round(0.125 * 0.167 * 0.6, 4) == 0.0125 and round(1.2 / 2, 6) == 0.6)
+check("原地转的桶：转速在 0.4 到 1.0 rad/s 之间（0.4 × 最大转速 1.0）", 0.4 * max(abs(az[0]), abs(az[1])) == 0.4)
 
 from mjlab_microduck.tasks.microduck_standup_env_cfg import make_microduck_standup_env_cfg  # noqa: E402
 
@@ -667,6 +877,8 @@ check("到最后一档，仰面躺着涨到 35%，已经站着降到 15%",
 check("原地转的环境固定占 15%（显式的命令桶，不是课程）", twist.rel_turn_in_place_envs == 0.15)
 check("每一档四种起点的比例加起来都是 1",
       all(abs(sum(value_of(s).values()) - 1.0) < 1e-9 for s in ground.params["param_stages"]))
+check("字面值：第二行 0.25 + 0.3 + 0.35 + 0.1 = 1；起步 0.4 + 0.4 = 0.8",
+      round(0.25 + 0.3 + 0.35 + 0.1, 6) == 1 and round(0.4 + 0.4, 6) == 0.8)
 
 # ---------------------------------------------------------------------------
 banner("10. 映射到项目：正文引用的常数和源码行还在不在")
@@ -674,9 +886,15 @@ REPO = Path(__file__).resolve().parents[3]
 cfg_path = REPO / "src" / "mjlab_microduck" / "tasks" / "microduck_velocity_env_cfg.py"
 mdp_path = REPO / "src" / "mjlab_microduck" / "tasks" / "mdp.py"
 VEL_LINES = [
+    "independent uniform sampling makes spin-on-the-spot ~2% of data → untrained)",
+    "# Commands — deepcopy to avoid shared-state corruption from other env cfgs",
+    "# post-iter-1000 reward/episode-length decline. ang ±1.0 is the big",
     "# fine_std=0.1 and the policy stopped walking entirely by iter 300 (air_time",
     "# 1.01 → 0.02, peak foot height 15 mm → 2 mm, entropy collapsed 10.9 → 1.9).",
+    "# An instantaneous tight tolerance taxes walking 0.77/step — 76% of the whole",
     "# air_time reward — and is UNESCAPABLE, since a 280 g head (38% of robot",
+    "# mass) must oscillate while stepping. Standing still scored higher, so it",
+    "# At the optimum this costs a walking policy nothing.",
     'cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(',
     "func=microduck_mdp.reward_weight,",
     '"reward_name": "action_rate_l2",',
@@ -684,12 +902,17 @@ VEL_LINES = [
     '{"step": 0, "weight": -0.1},',
     '{"step": 500 * NUM_STEPS_PER_ENV, "weight": -0.2},',
     '{"step": 1500 * NUM_STEPS_PER_ENV, "weight": -1.0},',
+    '{"step": 500 * 24,    "rel_standing_envs": 0.05},',
+    '{"step": 500 * 24,  "ranges": ((-0.17, 0.17),  (-0.17, 0.17),  (-0.21, 0.21),  (-0.047, 0.047))},',
+    "# Capped at ±15 mm (2026-07 audit): the previous ramp to ±30 mm",
     "# exceeded the foot support polygon (heel is only 20 mm behind",
+    "# ramp increases: 0.015 → 0.02 → 0.03 as policies got worse.",
     'del cfg.curriculum["command_vel"]',
     "# a gait exists. At weight 3.0 a 15° residual bias costs 0.79/step and a",
     "# 2° bias costs 0.10/step.",
     '{"step": 600 * NUM_STEPS_PER_ENV, "weight": 1.0},',
     '{"step": 1500 * NUM_STEPS_PER_ENV, "weight": 3.0},',
+    "num_steps_per_env=24,",
 ]
 MDP_LINES = [
     "def reward_weight(",
@@ -701,15 +924,27 @@ MDP_LINES = [
     "# NOTE: must update the live EventManager term_cfg, not env.cfg.events —",
     "# EventManager.__init__ does deepcopy(cfg), so mutating env.cfg.events is a no-op.",
     "event_cfg = env.event_manager.get_term_cfg(event_name)",
+    "turn_ids = env_ids[r.uniform_(0.0, 1.0) < p]",
+    "mag = torch.empty(len(turn_ids), device=self.device).uniform_(0.4 * maxr, maxr)",
+    "self.is_standing_env[turn_ids] = False",
     "measured at ~0.77/step against an air_time reward of",
     "~1.01/step, which is exactly what made velocity run 2026-08-20 abandon",
     "def pose_command_range_curriculum(",
     'if env.common_step_counter >= stage["step"]:',
 ]
-if cfg_path.is_file() and mdp_path.is_file():
-    print("microduck_velocity_env_cfg.py：7 项课程的定义（阶梯写在 params 里）；mdp.py：reward_weight 等 4 个课程函数")
+standup_path = REPO / "src" / "mjlab_microduck" / "tasks" / "microduck_standup_env_cfg.py"
+STANDUP_LINES = [
+    'raw = os.environ.get("STANDUP_PLAY_FACE_UP")',
+    "# of a flat 25/25/25/25 from step 0. With the flat split the policy optimized",
+    '# trained — front only partially rose and face-up (back) froze into "do',
+]
+if cfg_path.is_file() and mdp_path.is_file() and standup_path.is_file():
+    print("microduck_velocity_env_cfg.py：7 项课程的定义（阶梯写在 params 里）；mdp.py：reward_weight 等 4 个课程函数、原地转的桶；"
+          "microduck_standup_env_cfg.py：逆向课程的来历")
     check(f"cfg 里引用的 {len(VEL_LINES)} 行都原样存在，顺序一致", lines_in_order(cfg_path.read_text(encoding="utf-8"), VEL_LINES))
     check(f"mdp.py 里引用的 {len(MDP_LINES)} 行都原样存在，顺序一致", lines_in_order(mdp_path.read_text(encoding="utf-8"), MDP_LINES))
+    check(f"起身任务配置里引用的 {len(STANDUP_LINES)} 行都原样存在，顺序一致",
+          lines_in_order(standup_path.read_text(encoding="utf-8"), STANDUP_LINES))
 else:
     print("  （没找到项目源码，跳过这一项）")
 
@@ -721,9 +956,15 @@ MJLAB_FILES = {
     "managers/curriculum_manager.py": ['extras[f"Curriculum/{term_name}"] = term_state',
                                        "state = term_cfg.func(self._env, env_ids, **term_cfg.params)"],
     "envs/manager_based_rl_env.py": ["self.common_step_counter += 1",
+                                     "self.reward_buf = self.reward_manager.compute(dt=self.step_dt)",
                                      "self.curriculum_manager.compute(env_ids=env_ids)"],
     "rl/runner.py": ['env_state = {"common_step_counter": self.env.unwrapped.common_step_counter}',
                      'self.env.unwrapped.common_step_counter = infos["env_state"]["common_step_counter"]'],
+    "rl/vecenv_wrapper.py": ["self.env.reset()"],
+    "scripts/play.py": ["env = ManagerBasedRlEnv(cfg=env_cfg, device=device, render_mode=render_mode)",
+                        "env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)",
+                        "runner.load("],
+    "tasks/velocity/mdp/velocity_command.py": ["self.is_standing_env[env_ids] = r.uniform_(0.0, 1.0) <= self.cfg.rel_standing_envs"],
 }
 if mjlab_dir and mjlab_dir.is_dir():
     cmd_src = (mjlab_dir / "managers/command_manager.py").read_text(encoding="utf-8")

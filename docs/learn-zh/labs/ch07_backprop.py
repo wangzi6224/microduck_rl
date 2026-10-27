@@ -8,6 +8,7 @@
 
 import importlib.util
 import inspect
+import itertools
 import math
 from pathlib import Path
 
@@ -46,6 +47,7 @@ print(f"一口气算：L = (w·x + b − y)² = ({W0:g}×{X1:g} + {B0:g} − {Y1
 print(f"拆成三台机器：ŷ = {W0:g}×{X1:g} + {B0:g} = {yh1:g} → e = {yh1:g} − {Y1:g} = {e1:g} → L = ({e1:g})² = {L1:g}")
 check("例一前向：ŷ = 2，e = −3，L = 9，和一口气算的 (1×2 + 0 − 5)² 相同",
       (yh1, e1, L1) == (2, -3, 9) and (W0 * X1 + B0 - Y1) ** 2 == L1)
+check("(−3)² = (−3) × (−3) = 9：负负得正", (-3) * (-3) == 9 == e1 * e1)
 check("7.1 自测：b 改成 1 → ŷ = 3，e = −2，L = 4", forward1(1.0, 1.0) == (3, -2, 4))
 
 X2, Y2, W1, W2 = 1.5, 2.0, 0.8, -0.5   # 例二：两层小网络（旧稿的数字原样保留）
@@ -162,6 +164,31 @@ plt.close(fig)
 banner("2. 反向传播：从 L 出发往回走，每过一台机器乘一次它的本地汇率")
 print(f"先回忆第 1 章 1.7 节的汇率：1 元换 0.14 美元、1 美元换 0.9 欧元 → 1 元换 0.14 × 0.9 = {0.14 * 0.9:.3f} 欧元")
 check("第 1 章 1.7 节的两道汇率相乘：0.14 × 0.9 = 0.126", round(0.14 * 0.9, 6) == 0.126)
+check("汇率为什么相乘：100 元 → 100 × 0.14 = 14 美元 → 14 × 0.9 = 12.6 欧元，12.6 ÷ 100 = 0.126",
+      round(100 * 0.14, 6) == 14 and round(14 * 0.9, 6) == 12.6 and round(12.6 / 100, 6) == 0.126)
+
+D = 0.01                                            # 每台机器先拧 0.01 量一量
+L_sq = (e1 + D) ** 2                                # 平方机器：e 从 −3 拧到 −2.99
+e_sub = (yh1 + D) - Y1                              # 减法机器：ŷ 从 2 拧到 2.01
+yh_tw, yh_tb = (W0 + D) * X1 + B0, W0 * X1 + (B0 + D)   # 乘加机器：分别只拧 w、只拧 b
+table(["机器", "拧了什么", "输出变成", "输出变了", "÷ 0.01"],
+      [["平方 L = e²", "e：−3 → −2.99", f"{L_sq:.4f}", f"{L_sq - L1:.4f}", f"{(L_sq - L1) / D:.2f}"],
+       ["减法 e = ŷ − y", "ŷ：2 → 2.01", f"{e_sub:.2f}", f"{e_sub - e1:.2f}", f"{(e_sub - e1) / D:.2f}"],
+       ["乘加，只拧 w", "w：1 → 1.01", f"{yh_tw:.2f}", f"{yh_tw - yh1:.2f}", f"{(yh_tw - yh1) / D:.2f}"],
+       ["乘加，只拧 b", "b：0 → 0.01", f"{yh_tb:.2f}", f"{yh_tb - yh1:.2f}", f"{(yh_tb - yh1) / D:.2f}"]])
+check("平方机器：e 从 −3 拧到 −2.99，L = (−2.99)² = 8.9401，少了 9 − 8.9401 = 0.0599，约是 0.01 的 6 倍",
+      round(L_sq, 4) == 8.9401 == round((-2.99) ** 2, 4) and round(L1 - L_sq, 4) == 0.0599 == round(9 - 8.9401, 4)
+      and round((L_sq - L1) / D, 2) == -5.99)
+check("减法机器：ŷ 从 2 拧到 2.01，e 从 −3 变成 −2.99，也多 0.01（本地汇率 1）",
+      round(e_sub, 6) == -2.99 and round((e_sub - e1) / D, 6) == 1)
+check("乘加机器：w 拧到 1.01，ŷ = 1.01 × 2 + 0 = 2.02（多 0.02，是 0.01 的 2 倍）；b 拧到 0.01，ŷ = 1 × 2 + 0.01 = 2.01（多 0.01）",
+      round(yh_tw, 6) == 2.02 == round(1.01 * 2 + 0, 6) and round((yh_tw - yh1) / D, 6) == 2
+      and round(yh_tb, 6) == 2.01 == round(1 * 2 + 0.01, 6) and round((yh_tb - yh1) / D, 6) == 1)
+check("补课：3.01² = 9 + 0.03 + 0.03 + 0.0001 = 9.0601（两条长条各 3 × 0.01 = 0.03，小角 0.01 × 0.01 = 0.0001）",
+      round(3.01 ** 2, 6) == 9.0601 == round(9 + 0.03 + 0.03 + 0.0001, 6) and round(3 * 0.01, 6) == 0.03
+      and round(0.01 * 0.01, 6) == 0.0001)
+check("补课：e 是负数也成立：(−3 + 0.01)² = 9 − 0.06 + 0.0001 = 8.9401，中间那项 2 × (−3) × 0.01 = −0.06",
+      round((-3 + 0.01) ** 2, 6) == 8.9401 == round(9 - 0.06 + 0.0001, 6) and round(2 * (-3) * 0.01, 6) == -0.06)
 rate_sq, rate_minus, rate_w, rate_b = 2 * e1, 1.0, X1, 1.0   # 平方：2e；减 y：1；乘加：对 w 是 x，对 b 是 1
 g_e = 1.0 * rate_sq            # 从 L 出发：L 对自己的倍数是 1
 g_yh = g_e * rate_minus
@@ -172,6 +199,7 @@ table(["走到", "乘上这台机器的本地汇率", "L 对它的倍数"],
 check("例一：∂L/∂w = (−6) × 1 × 2 = −12，∂L/∂b = (−6) × 1 × 1 = −6",
       (g_e, g_yh, g_w, g_b) == (-6, -6, -12, -6) and (-6) * 1 * 2 == -12 and (-6) * 1 * 1 == -6)
 check("就是第 3 章 3.5 节表里那两列：2·e·x = −12，2·e = −6", 2 * e1 * X1 == g_w and 2 * e1 == g_b)
+check("2·e·x 拆开是 (2e) × 1 × x，2·e 是 (2e) × 1 × 1：三个本地汇率连乘", (2 * e1) * 1 * X1 == g_w and (2 * e1) * 1 * 1 == g_b)
 rows = []
 for dw in (0.01, 0.001):
     Lw, Lb = forward1(W0 + dw, B0)[2], forward1(W0, B0 + dw)[2]
@@ -182,6 +210,15 @@ check("缩步核对：w 拧 0.01 → L = 8.8804，(8.8804 − 9)/0.01 = −11.96
       and round(rows[0][3], 4) == 8.9401 and round((8.9401 - 9) / 0.01, 2) == -5.99)
 check("步子缩到 0.001：变化率 −11.996、−5.999，更靠近 −12、−6",
       round(rows[1][2], 3) == -11.996 and round(rows[1][4], 3) == -5.999)
+check("传话：w 多 0.01 → ŷ 多 0.02 → e 多 0.02 → L 约少 0.12；一路倍数 2 × 1 × (−6) = −12，0.01 × (−12) = −0.12",
+      round(yh_tw - yh1, 6) == 0.02 and round((yh_tw - Y1) - e1, 6) == 0.02 and 2 * 1 * (-6) == -12 == g_w
+      and round(0.01 * -12, 6) == -0.12)
+check("实际重算：L = 8.8804，少了 9 − 8.8804 = 0.1196，和 0.12 只差 0.0004 = 0.02 × 0.02（平方机器的小角）",
+      round(L1 - rows[0][1], 4) == 0.1196 == round(9 - 8.8804, 4) and round(0.12 - 0.1196, 4) == 0.0004 == round(0.02 * 0.02, 4))
+check("差的那一点是小角：0.0004 ÷ 0.01 = 0.04，−12 + 0.04 = −11.96；拧 0.001 时 0.002 × 0.002 = 0.000004，÷ 0.001 = 0.004，−11.996",
+      round(0.0004 / 0.01, 6) == 0.04 and round(-12 + 0.04, 6) == -11.96 == round(rows[0][2], 2)
+      and round(0.002 * 0.002, 9) == 0.000004 and round(0.000004 / 0.001, 6) == 0.004
+      and round(-12 + 0.004, 6) == -11.996 == round(rows[1][2], 3))
 w_t = torch.tensor(W0, dtype=F64, requires_grad=True)
 b_t = torch.tensor(B0, dtype=F64, requires_grad=True)
 ((w_t * X1 + b_t - Y1) ** 2).backward()
@@ -206,6 +243,21 @@ check("例二：∂L/∂w₂ = (−5.2) × 1 × 1.2 = −6.24；∂L/∂w₁ = (
 check("例二：手算 = autograd", math.isclose(g2_w2, w2_t.grad.item()) and math.isclose(g2_w1, w1_t.grad.item()))
 check("路上的倍数：L 对 h 是 (−5.2) × (−0.5) = 2.6，L 对 z 也是 2.6（ELU 在正数处的汇率是 1）",
       math.isclose(g2_h, 2.6) and math.isclose(g2_z, 2.6))
+yh_h, yh_w2 = W2 * (h2 + D), (W2 + D) * h2          # 乘法机器：只拧 h、只拧 w2
+check("乘法机器问谁、汇率是另一个：h 拧到 1.21，ŷ = −0.5 × 1.21 = −0.605（变 −0.005，−0.5 倍）；w₂ 拧到 −0.49，ŷ = −0.49 × 1.2 = −0.588（变 +0.012，1.2 倍）",
+      round(yh_h, 6) == -0.605 == round(-0.5 * 1.21, 6) and round(yh_h - yh2, 6) == -0.005
+      and round(yh_w2, 6) == -0.588 == round(-0.49 * 1.2, 6) and round(yh_w2 - yh2, 6) == 0.012
+      and math.isclose((yh_h - yh2) / D, W2) and math.isclose((yh_w2 - yh2) / D, h2))
+z_t, h_t, yh_t, e_t, L_t = forward2(W1 + D, W2)    # 缩步核对 w1
+L_t3 = forward2(W1 + 0.001, W2)[4]
+print(f"w₁ 拧到 {W1 + D:g}：z = h = {z_t:.3f}，ŷ = {yh_t:.4f}，e = {e_t:.4f}，L = {L_t:.5f}，变化率 {(L_t - L2) / D:.3f}；"
+      f"拧 0.001：变化率 {(L_t3 - L2) / 0.001:.4f}")
+check("缩步核对 w₁：拧到 0.81，z = h = 1.215，ŷ = −0.6075，e = −2.6075，L = 6.79906，(6.79906 − 6.76) ÷ 0.01 = 3.906；拧 0.001 得 3.9006",
+      round(z_t, 6) == round(h_t, 6) == 1.215 and round(yh_t, 6) == -0.6075 and round(e_t, 6) == -2.6075
+      and round(L_t, 5) == 6.79906 and round((6.79906 - 6.76) / 0.01, 3) == 3.906 == round((L_t - L2) / D, 3)
+      and round((L_t3 - L2) / 0.001, 4) == 3.9006)
+check("正负号：w₁ 的梯度 3.9 是正的，拧大 L 也变大（6.76 → 6.79906）；w₂ 的 −6.24 是负的，拧大 L 变小",
+      g2_w1 > 0 and L_t > L2 and g2_w2 < 0 and forward2(W1, W2 + D)[4] < L2)
 zn = torch.tensor(-1.2, dtype=F64, requires_grad=True)
 torch.nn.functional.elu(zn).backward()
 check("ELU 在负数处的汇率：z = −1.2 时是 exp(−1.2) = 0.3012", round(zn.grad.item(), 4) == 0.3012 == round(math.exp(-1.2), 4))
@@ -215,6 +267,9 @@ w_t = torch.tensor(1.0, dtype=F64, requires_grad=True)
 rate_two = ((1.01 * XA + 1.01 * XB) - (XA + XB)) / 0.01
 check("两条路各贡献一份再相加：∂ŷ/∂w = 2 + 3 = 5（缩步量得 5，autograd 也是 5）",
       w_t.grad.item() == 5 and round(rate_two, 6) == 5)
+check("两条路各带一块：1.01 × 2 = 2.02（多 0.02），1.01 × 3 = 3.03（多 0.03），ŷ = 2.02 + 3.03 = 5.05，多 0.02 + 0.03 = 0.05，0.05 ÷ 0.01 = 5",
+      round(1.01 * XA, 6) == 2.02 and round(1.01 * XB, 6) == 3.03 and round(2.02 + 3.03, 6) == 5.05 == round(1.01 * XA + 1.01 * XB, 6)
+      and round(0.02 + 0.03, 6) == 0.05 and round(0.05 / 0.01, 6) == 5)
 check("7.2 自测：b = 1 时 e = −2，∂L/∂w = (−4) × 1 × 2 = −8，∂L/∂b = −4",
       2 * forward1(1.0, 1.0)[1] * X1 == -8 and 2 * forward1(1.0, 1.0)[1] == -4)
 
@@ -260,13 +315,16 @@ print(f"torch：backward() 之后 w = {w_before_step:g}、w.grad = {grad_seen:g}
 check("backward() 之后 w 还是 1（只写了 .grad = −12）；step() 之后才变成 1.12", w_before_step == 1 and grad_seen == -12)
 check("SGD 一步：w = 1 − 0.01 × (−12) = 1.12，b = 0 − 0.01 × (−6) = 0.06；torch.optim.SGD 同样",
       round(w_new, 6) == 1.12 and round(b_new, 6) == 0.06 and math.isclose(w_t.item(), 1.12) and math.isclose(b_t.item(), 0.06))
+check("拆开看：0.01 × (−12) = −0.12，1 + 0.12 = 1.12；0.01 × (−6) = −0.06，0 + 0.06 = 0.06",
+      round(0.01 * -12, 6) == -0.12 and round(1 + 0.12, 6) == 1.12 and round(0.01 * -6, 6) == -0.06 and round(0 + 0.06, 6) == 0.06)
 check("拧完再算一遍：ŷ = 1.12 × 2 + 0.06 = 2.30，e = −2.70，L = (−2.70)² = 7.29，比 9 小",
       round(yh_new, 6) == 2.3 and round(e_new, 6) == -2.7 and round(L_new, 6) == 7.29 == round(round(1.12 * 2 + 0.06 - 5, 2) ** 2, 6))
 w_t = torch.tensor(W0, dtype=F64, requires_grad=True)
 b_t = torch.tensor(B0, dtype=F64, requires_grad=True)
 for _ in range(2):                                   # 不清零，连着 backward 两次
     ((w_t * X1 + b_t - Y1) ** 2).backward()
-check("连着做两次“前向 + backward()”不清零：.grad 累加成 −24、−12（不是覆盖成 −12、−6）", (w_t.grad.item(), b_t.grad.item()) == (-24, -12))
+check("连着做两次“前向 + backward()”不清零：.grad 累加成 −12 + (−12) = −24、−6 + (−6) = −12（不是覆盖成 −12、−6）",
+      (w_t.grad.item(), b_t.grad.item()) == (-24, -12) and -12 + (-12) == -24 and -6 + (-6) == -12)
 loss_once = (w_t * X1 + b_t - Y1) ** 2
 loss_once.backward()
 try:                                                 # 同一个 loss 再往回走一次：前向记下的数已经扔了
@@ -288,6 +346,49 @@ ALPHA_SLOW = 0.005  # TWEAK-1: 0.011
 def bowl(x, y):
     return x ** 2 + STEEP * y ** 2
 
+
+check("扁碗：离碗底 1 格，x 方向高 1² = 1，y 方向高 100 × 1² = 100；两个偏导数 2x、200y 在 1 格处是 2 和 200",
+      bowl(1, 0) == 1 and bowl(0, 1) == 100 and 2 * 1 == 2 and 2 * STEEP * 1 == 200)
+
+# 每步乘几：拿 y = 2 走一遍（α = 0.1），再写成“打折”
+A_DEMO = 0.1
+slope_y = 2 * STEEP * Y_START                      # 200y = 400
+step_y = -A_DEMO * slope_y                          # −0.1 × 400 = −40
+print(f"y 方向（α = {A_DEMO:g}）：坡度 200 × {Y_START:g} = {slope_y:g}，这一步 −{A_DEMO:g} × {slope_y:g} = {step_y:g}，新 y = {Y_START + step_y:g}")
+check("拿 y = 2 走一遍（α = 0.1）：坡度 200 × 2 = 400，这一步 −0.1 × 400 = −40，新 y = 2 − 40 = −38",
+      slope_y == 400 and round(step_y, 6) == -40 and round(Y_START + step_y, 6) == -38)
+check("坡度是距离的 200 倍：变化 = −200α × 距离，200 × 0.1 = 20，−20 × 2 = −40；提公因数 2 × (1 − 20) = 2 × (−19) = −38；下一步 −38 × (−19) = 722",
+      round(200 * 0.1, 6) == 20 and round(-20 * 2, 6) == -40 and round(2 * (1 - 20), 6) == -38 == round(2 * (-19), 6)
+      and (-38) * (-19) == 722 and slope_y == 200 * Y_START)
+check("打八折：100 − 0.2 × 100 = 100 × (1 − 0.2) = 80", round(100 - 0.2 * 100, 6) == round(100 * (1 - 0.2), 6) == 80)
+check("x 方向（α = 0.005）：坡度 2 × 3 = 6，这一步 −0.005 × 6 = −0.03，新 x = 3 − 0.03 = 2.97 = 3 × (1 − 2 × 0.005) = 3 × 0.99",
+      2 * X_START == 6 and round(-0.005 * 6, 6) == -0.03 and round(3 - 0.03, 6) == 2.97 == round(3 * 0.99, 6)
+      and round(1 - 2 * 0.005, 6) == 0.99)
+
+
+def sgd_ys(a, steps=2):
+    """torch.optim.SGD 在扁碗上走几步，返回 y 的前几个值（核对“每步乘 1 − 200α”）。"""
+    p = torch.tensor([X_START, Y_START], dtype=F64, requires_grad=True)
+    o = torch.optim.SGD([p], lr=a)
+    ys = [p[1].item()]
+    for _ in range(steps):
+        o.zero_grad()
+        bowl(p[0], p[1]).backward()
+        o.step()
+        ys.append(p[1].item())
+    return [round(v, 6) for v in ys]
+
+
+MULT_ALPHAS = (0.005, 0.0075, 0.01, 0.015, 0.1)
+mults = {a: round(1 - 2 * STEEP * a, 6) for a in MULT_ALPHAS}
+table(["学习率 α", "y 每步乘 1 − 200α", "torch SGD 走出的 y（前三个）"],
+      [[f"{a:g}", fmt(mults[a], 4), " → ".join(fmt(v, 4) for v in sgd_ys(a))] for a in MULT_ALPHAS])
+check("乘数表：x 方向 α = 0.005 乘 0.99；y 方向 α = 0.005 乘 0，0.0075 乘 −0.5，0.01 乘 −1，0.1 乘 −19",
+      round(1 - 2 * 0.005, 6) == 0.99 and [mults[a] for a in (0.005, 0.0075, 0.01, 0.1)] == [0, -0.5, -1, -19])
+check("torch 的 SGD 照着乘数走：α = 0.0075 时 y：2 → −1 → 0.5（跳到对面、越来越近）；0.01 时 2 → −2 → 2（原地对跳）；0.015 时 2 → −4 → 8（发散）",
+      sgd_ys(0.0075) == [2, -1, 0.5] and sgd_ys(0.01) == [2, -2, 2] and sgd_ys(0.015) == [2, -4, 8])
+check("门槛：1 − 200α > −1 → 2 − 200α > 0 → 2 > 200α → α < 2 ÷ 200 = 0.01；α = 0.01 乘 1 − 2 = −1，α = 0.015 乘 1 − 3 = −2",
+      round(2 / 200, 6) == 0.01 and round(1 - 200 * 0.01, 6) == -1 and round(200 * 0.015, 6) == 3 and round(1 - 200 * 0.015, 6) == -2)
 
 rows = []
 for a in (ALPHA_FAST, ALPHA_SLOW):
@@ -322,22 +423,55 @@ fixed = [a / d for a, d in zip(avg0, divisors)]
 table(["第几天", "气温", "从 30 起步的平均", "从 0 起步的平均", "除以的数", "起步修正后"],
       [[t + 1, TEMPS[t], f"{avg30[t]:.2f}", f"{avg0[t]:.2f}", f"{divisors[t]:.3f}", f"{fixed[t]:.2f}"] for t in range(len(TEMPS))])
 print(f"气温在 {min(TEMPS)}–{max(TEMPS)} 度之间跳；从 30 起步的平均只在 {min(avg30):.2f}–{max(avg30):.2f} 之间动。")
+check("九成加一成是十成：0.9 + 0.1 = 1；今天正好等于旧平均时平均不动：0.9 × 30 + 0.1 × 30 = 27 + 3 = 30",
+      round(0.9 + 0.1, 6) == 1 and round(0.9 * 30 + 0.1 * 30, 6) == 30 == round(27 + 3, 6))
+check("构造的 10 天气温加起来 300 度，平均正好 30 度", sum(TEMPS) == 300 and sum(TEMPS) / len(TEMPS) == 30)
 check("第 1 天：0.9 × 30 + 0.1 × 26 = 29.6（今天冷了 4 度，平均只降 0.4 度）",
       round(avg30[0], 6) == 29.6 == round(0.9 * 30 + 0.1 * 26, 6))
 check("第 2 天：0.9 × 29.6 + 0.1 × 34 = 30.04；换个读法：29.6 + 0.1 × (34 − 29.6) = 29.6 + 0.44 = 30.04",
       round(avg30[1], 6) == 30.04 == round(0.9 * 29.6 + 0.1 * 34, 6) == round(29.6 + 0.1 * (34 - 29.6), 6) and round(0.1 * (34 - 29.6), 6) == 0.44)
+check("一步一步：0.9 × 29.6 = 29.6 − 0.1 × 29.6 = 29.6 − 2.96 = 26.64；−2.96 + 3.4 = 0.44 = 0.1 × (34 − 29.6) = 0.1 × 4.4",
+      round(0.9 * 29.6, 6) == round(29.6 - 0.1 * 29.6, 6) == round(29.6 - 2.96, 6) == 26.64 and round(0.1 * 29.6, 6) == 2.96
+      and round(-2.96 + 3.4, 6) == 0.44 == round(0.1 * (34 - 29.6), 6) == round(0.1 * 4.4, 6) and round(34 - 29.6, 6) == 4.4)
+chase = [30.0]                                      # “慢”的一面：平均 30 度，之后天天 40 度
+while len(chase) < 100 and chase[-1] <= 39:
+    chase.append(BETA * chase[-1] + (1 - BETA) * 40)
+print(f"平均 30 度、之后天天 40 度：{' → '.join(f'{c:.2f}' for c in chase[:4])} …… 第 {len(chase) - 1} 天到 {chase[-1]:.3f}，才超过 39 度")
+check("天天 40 度：0.9 × 30 + 0.1 × 40 = 31，0.9 × 31 + 0.1 × 40 = 31.9……第 22 天才超过 39 度",
+      round(chase[1], 6) == 31 == round(0.9 * 30 + 0.1 * 40, 6) and round(chase[2], 6) == 31.9 == round(0.9 * 31 + 0.1 * 40, 6)
+      and len(chase) - 1 == 22)
 check("气温跳了 8 度（26 到 34），平均一直在 29.6 到 30.07 之间",
       (min(TEMPS), max(TEMPS)) == (26, 34) and round(min(avg30), 2) == 29.6 and round(max(avg30), 2) == 30.07)
 check("从 0 起步：第 1 天 0.9 × 0 + 0.1 × 26 = 2.6；除以 1 − 0.9 = 0.1，修正回 26",
       round(avg0[0], 6) == 2.6 and round(fixed[0], 6) == 26 and round(2.6 / 0.1, 6) == 26)
-check("折叠：第 2 天 0.9 × 2.6 + 0.1 × 34 = 5.74；除以 1 − 0.9² = 0.19，得 5.74 ÷ 0.19 = 30.21",
-      round(avg0[1], 6) == 5.74 and round(divisors[1], 6) == 0.19 and round(fixed[1], 2) == 30.21 == round(5.74 / 0.19, 2))
-check("折叠：按份额求加权平均 (0.09 × 26 + 0.1 × 34) ÷ 0.19 = (2.34 + 3.4) ÷ 0.19 = 30.21，和 5.74 ÷ 0.19 一样",
+check("第 2 天：0.9 × 2.6 + 0.1 × 34 = 2.34 + 3.4 = 5.74；除以 1 − 0.9² = 0.19，得 5.74 ÷ 0.19 = 30.21",
+      round(avg0[1], 6) == 5.74 == round(2.34 + 3.4, 6) and round(0.9 * 2.6, 6) == 2.34 and round(divisors[1], 6) == 0.19
+      and round(fixed[1], 2) == 30.21 == round(5.74 / 0.19, 2))
+check("第 2 天拆份额：今天 0.1，第 1 天 0.9 × 0.1 = 0.09，假的 0 占 0.9 × 0.9 = 0.81；0.1 + 0.09 + 0.81 = 1，真数据 0.1 + 0.09 = 0.19",
+      round(0.9 * 0.1, 6) == 0.09 and round(0.9 * 0.9, 6) == 0.81 and round(0.1 + 0.09 + 0.81, 6) == 1 and round(0.1 + 0.09, 6) == 0.19)
+check("按份额求加权平均 (0.09 × 26 + 0.1 × 34) ÷ 0.19 = (2.34 + 3.4) ÷ 0.19 = 30.21，和 5.74 ÷ 0.19 一样",
       round(0.9 * 0.1, 6) == 0.09 and round(0.09 * 26, 6) == 2.34 and round((2.34 + 3.4) / 0.19, 2) == 30.21
       and round((0.09 * TEMPS[0] + 0.1 * TEMPS[1]) / 0.19, 2) == 30.21)
+check("份额放大到加起来是 1：0.09 ÷ 0.19 ≈ 0.474，0.1 ÷ 0.19 ≈ 0.526，0.474 + 0.526 = 1",
+      round(0.09 / 0.19, 3) == 0.474 and round(0.1 / 0.19, 3) == 0.526 and round(0.474 + 0.526, 6) == 1)
+T_SHOW = [1, 2, 3, 10, 50]
+fake0 = [round(0.9 ** t, 3) for t in T_SHOW]
+real = [round(1 - 0.9 ** t, 3) for t in T_SHOW]
+table(["第 t 天"] + [str(t) for t in T_SHOW], [["假的 0 占 0.9^t"] + [num(v, 3) for v in fake0],
+                                              ["要除的数 1 − 0.9^t"] + [num(v, 3) for v in real]])
+check("假的 0 每天打九折：0.81 × 0.9 = 0.729；0.9^t = 0.9、0.81、0.729、0.349、0.005，要除的数 0.1、0.19、0.271、0.651、0.995",
+      round(0.81 * 0.9, 6) == 0.729 and fake0 == [0.9, 0.81, 0.729, 0.349, 0.005] and real == [0.1, 0.19, 0.271, 0.651, 0.995])
+check(f"所有份额加起来永远是 1：前 t 天各天的份额 + 假的 0 的份额 = 1（β = {BETA:g}，t = 1 到 50 都对）",
+      all(math.isclose(sum((1 - BETA) * BETA ** (t - i) for i in range(1, t + 1)) + BETA ** t, 1) for t in range(1, 51)))
+check("记性：今天 0.1、昨天 0.09、前天 0.1 × 0.81 = 0.081；比 10 天更早的合起来 0.9¹⁰ = 0.349；1 ÷ (1 − 0.9) = 10，1 ÷ (1 − 0.999) = 1000",
+      round(0.1 * 0.81, 6) == 0.081 and round(0.9 ** 10, 3) == 0.349 and round(1 / (1 - 0.9)) == 10 and round(1 / (1 - 0.999)) == 1000)
+check("折叠：0.9¹⁰ = 0.349，0.99¹⁰⁰ = 0.366，0.999¹⁰⁰⁰ = 0.368，越来越靠近 1 ÷ e = 0.368；1 − 0.37 = 0.63",
+      [round(0.9 ** 10, 3), round(0.99 ** 100, 3), round(0.999 ** 1000, 3)] == [0.349, 0.366, 0.368]
+      and round(1 / math.e, 3) == 0.368 and round(1 - 0.37, 2) == 0.63)
+check("折叠：从第 1 天的 26 起步，第 2 天是 0.9 × 26 + 0.1 × 34 = 26.8（第 1 天一个人占九成）", round(0.9 * 26 + 0.1 * 34, 6) == 26.8)
 check("第 10 天：不修正的平均 19.60，还没爬到 20 度", round(avg0[9], 2) == 19.6 < 20)
 check("正文的 JS reduce：从 30 起步，第 10 天的滑动平均约为 30.06", round(avg30[9], 2) == 30.06)
-check("折叠：第 2 天来自数据的份额 0.9 × 0.1 + 0.1 = 0.19 = 1 − 0.9²，假的 0 占 0.81 = 0.9²；除数第 3 天 0.271，第 10 天 0.651",
+check("第 2 天来自数据的份额 0.9 × 0.1 + 0.1 = 0.19 = 1 − 0.9²，假的 0 占 0.81 = 0.9²；除数第 3 天 0.271，第 10 天 0.651",
       round(0.9 * 0.1 + 0.1, 6) == 0.19 == round(1 - 0.9 ** 2, 6) and round(0.9 ** 2, 6) == 0.81
       and [round(divisors[k], 3) for k in (0, 1, 2, 9)] == [0.1, 0.19, 0.271, 0.651])
 check("7.4 自测：0.9 × 20 + 0.1 × 10 = 19；从 0 起步 0.1 × 10 = 1，除以 0.1 得 10",
@@ -413,6 +547,33 @@ m3, v3, mh3, vh3, k3 = adam_first_step(-3.0)
 check("7.5 自测：g = −3 → m = −0.3，v = 0.009 → −3、9 → 这一步 = α × (−3)/3 = −α，旋钮往大拧 α",
       math.isclose(m3, -0.3) and math.isclose(v3, 0.009) and math.isclose(mh3, -3) and math.isclose(vh3, 9)
       and abs(k3 + 1) < 1e-7)
+check("SGD 的步子和梯度成正比：α = 0.005 时 x 挪 0.005 × 6 = 0.03，y 挪 0.005 × 400 = 2，2 ÷ 0.03 约 67 倍",
+      round(0.005 * 6, 6) == 0.03 and round(0.005 * 400, 6) == 2 and round(2 / 0.03) == 67)
+check("除以“一向多大”：400 ÷ 400 = 1，6 ÷ 6 = 1", 400 / 400 == 1 == 6 / 6)
+check("第一步的四步：今天占 1 − 0.9 = 0.1、1 − 0.999 = 0.001；0.001 × 4 = 0.004；0.2 ÷ 0.1 = 2，0.004 ÷ 0.001 = 4；2 × 2 = 4，所以 √4 = 2",
+      round(1 - 0.9, 6) == 0.1 and round(1 - 0.999, 6) == 0.001 and round(0.001 * 4, 6) == 0.004 and round(0.2 / 0.1, 6) == 2
+      and round(0.004 / 0.001, 6) == 4 and 2 * 2 == 4 and math.sqrt(4) == 2)
+check("g = 400：40 ÷ 0.1 = 400；400² = 160,000，0.001 × 160,000 = 160，160 ÷ 0.001 = 160,000，400 × 400 = 160,000；梯度大了 400 ÷ 2 = 200 倍",
+      round(40 / 0.1, 6) == 400 and 400 ** 2 == 160000 == 400 * 400 and round(0.001 * 160000, 6) == 160
+      and round(160 / 0.001, 3) == 160000 and 400 / 2 == 200)
+check("v 记平方：+4、−4 直接平均 (4 − 4) ÷ 2 = 0；平方后 16、16，平均 16，√16 = 4；两步都是 +4 时方差 0、v 是 16",
+      (4 - 4) / 2 == 0 and (16 + 16) / 2 == 16 and math.sqrt(16) == 4 and np.var([4.0, 4.0]) == 0
+      and np.mean(np.square([4.0, 4.0])) == 16)
+check("不开平方、直接除以修正后的 v：2 ÷ 4 = 0.5，400 ÷ 160,000 = 0.0025，梯度大 200 倍、步子反而小 200 倍；平方差 200 × 200 = 40,000 倍",
+      2 / 4 == 0.5 and round(400 / 160000, 6) == 0.0025 and round(0.5 / 0.0025, 6) == 200 and 200 * 200 == 40000 == 160000 // 4)
+check("不修正为什么大 3.162 倍：m 小 2 ÷ 0.2 = 10 倍，v 小 4 ÷ 0.004 = 1000 倍、√v 小 √1000 ≈ 31.62 倍，31.62 ÷ 10 = 3.162",
+      round(2 / 0.2, 6) == 10 and round(4 / 0.004, 6) == 1000 and round(math.sqrt(1000), 2) == 31.62
+      and round(31.62 / 10, 3) == 3.162 and round(math.sqrt(4) / math.sqrt(0.004), 2) == 31.62)
+check("ε 平常小到可以不计：√v̂ = 2 时分母 2 + 0.00000001 = 2.00000001，第一步和 α 差不到一亿分之一",
+      EPS == 0.00000001 and round(2 + EPS, 8) == 2.00000001 and abs(k - 1) < 1e-8)
+pz = torch.tensor([1.0], dtype=F64, requires_grad=True)   # 梯度一直是 0 的旋钮
+oz = torch.optim.Adam([pz], lr=0.3)
+for _ in range(3):
+    oz.zero_grad()
+    (pz * 0.0).sum().backward()
+    oz.step()
+check("ε 救命：梯度一直是 0 时，0 ÷ (0 + 0.00000001) = 0；torch 的 Adam 走 3 步，旋钮原地不动、不出 nan",
+      0 / (0 + EPS) == 0 and pz.item() == 1.0 and math.isfinite(pz.item()))
 ALPHA_ADAM = 0.3
 p = torch.tensor([X_START, Y_START], dtype=F64, requires_grad=True)
 opt = torch.optim.Adam([p], lr=ALPHA_ADAM)
@@ -428,6 +589,8 @@ check(f"同一个 α = {ALPHA_ADAM:g} 交给 SGD：x 跨 0.3 × 6 = {ALPHA_ADAM 
 check("扁碗第一步：梯度 (2×3, 200×2) = (6, 400)，400 ÷ 6 ≈ 66.7，约 67 倍；Adam 两个方向都走 0.3 → (2.7, 1.7)，手算 = torch",
       g_bowl.tolist() == [6, 400] and round(400 / 6, 1) == 66.7 and round(400 / 6) == 67 and np.allclose(hand_step, [2.7, 1.7])
       and np.allclose(p.detach().numpy(), [2.7, 1.7]))
+check("两个梯度都是正的，两个旋钮都往小拧：3 − 0.3 = 2.7，2 − 0.3 = 1.7", min(g_bowl.tolist()) > 0
+      and round(3 - 0.3, 6) == 2.7 and round(2 - 0.3, 6) == 1.7)
 
 
 def run(opt_name, lr, steps=100):
@@ -453,6 +616,14 @@ check("SGD α = 0.1：10 步后高度已经 1.504e+28（科学计数法），越
 check(f"SGD α = {ALPHA_SLOW:g}：torch 连走 100 步的高度 = 上面 0.99¹⁰⁰ 手算的 {rows[1][5]}", math.isclose(h_slow[3], float(rows[1][5]), rel_tol=1e-3))
 check("SGD α = 0.005 的高度：10 步 7.361，30 步 4.924，60 步 2.694，100 步 1.206",
       [round(h, 3) for h in h_slow] == [7.361, 4.924, 2.694, 1.206])
+slow_by_hand = [round((3 * 0.99 ** k_) ** 2, 3) for k_ in (10, 30, 60, 100)]
+check("这一行能手算：第 1 步后 y 就是 0，k 步后 x = 3 × 0.99ᵏ，(3 × 0.99¹⁰)² = 7.361，换成 30、60、100 得 4.924、2.694、1.206——和 torch 走的一样",
+      slow_by_hand == [7.361, 4.924, 2.694, 1.206] and [round(h, 3) for h in h_slow] == slow_by_hand
+      and float(np.abs(paths[f"SGD α={ALPHA_SLOW:g}"][1:, 1]).max()) < 1e-12)
+CONTOUR_LEVELS = [1, 4, 9, 25, 100, 225, 400]          # 5c 那张图的等高线高度
+check("图 ch07_optimizers 的等高线高度 1、4、9、25、100、225、400，间隔不相等；y = 1 时 100y² = 100",
+      CONTOUR_LEVELS == [1, 4, 9, 25, 100, 225, 400] and len({b - a for a, b in zip(CONTOUR_LEVELS, CONTOUR_LEVELS[1:])}) > 1
+      and bowl(0, 1) == 100)
 check("Adam α = 0.3 的高度：10 步 24.24（比 SGD 还高），30 步 10.14，60 步 0.3982，100 步 0.0001204",
       [round(h_adam[0], 2), round(h_adam[1], 2), round(h_adam[2], 4), round(h_adam[3], 7)] == [24.24, 10.14, 0.3982, 0.0001204])
 check("Adam 100 步后两个旋钮离碗底都不到 0.01 格", float(np.abs(paths[f"Adam α={ALPHA_ADAM:g}"][-1]).max()) < 0.01)
@@ -468,6 +639,26 @@ check("折叠：+4、−4 第 2 步 m = −0.04 → ÷ 0.19 = −0.2105；v = 0.
       round(m_a, 6) == -0.04 and round(m_a / 0.19, 4) == -0.2105 and round(v_a, 6) == 0.031984 and round(1 - B2 ** 2, 6) == 0.001999
       and round(v_a / (1 - B2 ** 2), 1) == 16.0 and round(-0.2105 / 4, 4) == -0.0526 == round(k_a, 4))
 check("对照：+4、+4 一直同向，第 2 步修正后 m = 4，这一步还是 α", math.isclose(m_b / (1 - B1 ** 2), 4) and abs(k_b - 1) < 1e-6)
+check("正文：来回跳时 √v̂ 还是 √16.0 = 4", round(math.sqrt(v_a / (1 - B2 ** 2)), 4) == 4.0)
+m_c, v_c = 0.0, 0.0
+for g_c in (4.0, 0.0):                               # 惯性：+4 之后梯度变成 0
+    m_c, v_c = B1 * m_c + (1 - B1) * g_c, B2 * v_c + (1 - B2) * g_c * g_c
+k_c = (m_c / (1 - B1 ** 2)) / (math.sqrt(v_c / (1 - B2 ** 2)) + EPS)
+print(f"惯性（+4、0）第 2 步：m = {m_c:.2f}，修正后 {m_c / 0.19:.3f}；v = {v_c:.6f}，修正后 {v_c / 0.001999:.3f}；这一步 = {k_c:.3f} α")
+check("折叠·惯性：+4 再 0，m = 0.9 × 0.4 + 0.1 × 0 = 0.36 → ÷ 0.19 = 1.895；v = 0.015984 → ÷ 0.001999 = 7.996，开方 2.828；1.895 ÷ 2.828 = 0.67",
+      round(m_c, 6) == 0.36 == round(0.9 * 0.4 + 0.1 * 0, 6) and round(m_c / 0.19, 3) == 1.895 and round(v_c, 6) == 0.015984
+      and round(v_c / 0.001999, 3) == 7.996 and round(math.sqrt(7.996), 3) == 2.828 and round(1.895 / 2.828, 2) == 0.67 == round(k_c, 2))
+pi_ = torch.tensor([0.0], dtype=F64, requires_grad=True)
+oi = torch.optim.Adam([pi_], lr=1.0)
+moves = []
+for g_c in (4.0, 0.0):
+    before = pi_.item()
+    oi.zero_grad()
+    (pi_ * g_c).sum().backward()
+    oi.step()
+    moves.append(pi_.item() - before)
+check("torch 的 Adam 也一样：第 1 步（梯度 4）挪 α，第 2 步梯度是 0，还是顺着同一方向挪了 0.67 个 α",
+      round(moves[0], 6) == -1 and round(moves[1], 2) == -0.67)
 sig = inspect.signature(torch.optim.Adam.__init__).parameters
 check("torch.optim.Adam 的默认值：β₁ = 0.9，β₂ = 0.999，ε = 1e-8", sig["betas"].default == (0.9, 0.999) and sig["eps"].default == 1e-8)
 
@@ -526,7 +717,7 @@ notes = ["箭头只画了第 1 步：从 y = 2 跳到 −38，远远出了图。
 for row, (name, path) in enumerate(paths.items()):
     ax = fig.add_subplot(gs[row, 0])
     data_axes(ax, "旋钮 x", "旋钮 y")
-    ax.contour(gx, gy, bowl(gx, gy), levels=[1, 4, 9, 25, 100, 225, 400], colors=FAINT, linewidths=1.2)
+    ax.contour(gx, gy, bowl(gx, gy), levels=CONTOUR_LEVELS, colors=FAINT, linewidths=1.2)
     ax.set_xlim(-1.2, 3.8)
     ax.set_ylim(-2.6, 2.6)
     ax.set_aspect("equal")
@@ -565,8 +756,8 @@ print("切成的 4 份：", parts)
 for ep in range(N_EPOCHS):
     print(f"  第 {ep + 1} 遍：", "  ".join(f"更新 {ep * N_PARTS + i + 1}：{part}" for i, part in enumerate(parts)))
 check("8 条记录每份 2 条：8 ÷ 4 = 2；过 3 遍：4 × 3 = 12 次更新", size == 2 and len(updates) == 12 == 4 * 3)
-check("12 次更新一共看了 24 条次，但不同的记录只有 8 条：每条正好被看 3 次",
-      sum(len(u[2]) for u in updates) == 24 and len({r for u in updates for r in u[2]}) == 8
+check("12 次更新一共看了 12 × 2 = 24 条次，但不同的记录只有 8 条：每条正好被看 3 次",
+      sum(len(u[2]) for u in updates) == 24 == 12 * 2 and len({r for u in updates for r in u[2]}) == 8
       and all(sum(r in u[2] for u in updates) == 3 for r in range(1, 9)))
 check("7.6 自测（旧稿原数）：切 2 份、每份 4 条、过 3 遍 → 2 × 3 = 6 次更新；记录仍只有 8 条", (8 // 2, 2 * 3) == (4, 6))
 REC4 = [(2.0, 5.0), (1.0, 3.0), (2.0, 3.0), (1.0, 1.0)]     # 4 条记录（第 1 条就是 7.1 节那条），w = 1，b = 0
@@ -580,6 +771,21 @@ check("每条的 2·e·x：−12、−4、−4、0；全体平均 (−12 − 4 �
       per == [-12, -4, -4, 0] and full == -5 and w_t.grad.item() == -5)
 check("两份各算一次：(−12 − 4)/2 = −8，(−4 + 0)/2 = −2——方向一样，大小在抖；两份再平均 (−8 − 2)/2 = −5",
       (part_a, part_b) == (-8, -2) and (part_a + part_b) / 2 == full)
+check("拿第二条 (1, 3) 算一列：ŷ = 1 × 1 + 0 = 1，e = 1 − 3 = −2，2 × (−2) × 1 = −4",
+      forward1(W0, B0, 1.0, 3.0)[:2] == (1, -2) and 1 * 1 + 0 == 1 and 1 - 3 == -2 and 2 * (-2) * 1 == -4 == per[1])
+check("两份一样大：(−8 − 2) ÷ 2 = (−16 ÷ 2 − 4 ÷ 2) ÷ 2 = (−16 − 4) ÷ 4 = −5",
+      sum(per[:2]) == -16 and sum(per[2:]) == -4 and (-8 - 2) / 2 == (-16 / 2 - 4 / 2) / 2 == (-16 - 4) / 4 == -5)
+singles = list(per)                                                       # 每份 1 条：4 种抽法
+pairs = [sum(per[i] for i in c) / 2 for c in itertools.combinations(range(4), 2)]   # 每份 2 条：6 种挑法
+table(["每份几条", "所有可能的抽法，各自算出的梯度", "最小到最大", "所有抽法的平均"],
+      [["1 条", "、".join(fmt(g) for g in singles), f"{fmt(min(singles))} 到 {fmt(max(singles))}", fmt(sum(singles) / 4)],
+       ["2 条", "、".join(fmt(g) for g in pairs), f"{fmt(min(pairs))} 到 {fmt(max(pairs))}", fmt(sum(pairs) / 6)],
+       ["4 条（全部）", fmt(full), f"只有 {fmt(full)}", fmt(full)]])
+check("所有抽法：1 条 −12、−4、−4、0；2 条（6 种挑法）−8、−8、−6、−4、−2、−2；4 条只有 −5；平均都是 −5，(−8 − 8 − 6 − 4 − 2 − 2) ÷ 6 = −30 ÷ 6",
+      singles == [-12, -4, -4, 0] and pairs == [-8, -8, -6, -4, -2, -2] and sum(singles) / 4 == sum(pairs) / 6 == full == -5
+      and (-8 - 8 - 6 - 4 - 2 - 2) == -30 and -30 / 6 == -5)
+check("份越大抖得越小：1 条时 −12 到 0，2 条时 −8 到 −2，4 条只有 −5",
+      (min(singles), max(singles)) == (-12, 0) and (min(pairs), max(pairs)) == (-8, -2))
 ENVS, STEPS, MB, EP = 4096, 24, 4, 5
 rec = ENVS * STEPS
 check("项目：4096 × 24 = 98,304 条；÷ 4 = 24,576 条一份；4 份 × 5 遍 = 20 次更新",
@@ -624,6 +830,10 @@ torch.manual_seed(0)       # 和旧版实验同一个起点（旧版在这之前
 X = torch.linspace(-math.pi, math.pi, 400).unsqueeze(1)
 Y = torch.sin(X)
 net = torch.nn.Sequential(torch.nn.Linear(1, 32), torch.nn.ELU(), torch.nn.Linear(32, 32), torch.nn.ELU(), torch.nn.Linear(32, 1))
+n_knobs = sum(t.numel() for t in net.parameters())
+check("小网络的旋钮：32 × 2 + 32 × 33 + 1 × 33 = 64 + 1,056 + 33 = 1,153 个（第 6 章 6.5 节的数法），不到项目 197,788 个的百分之一",
+      n_knobs == 1153 == 32 * 2 + 32 * 33 + 1 * 33 and (32 * 2, 32 * 33, 1 * 33) == (64, 1056, 33) and 64 + 1056 + 33 == 1153
+      and 1153 / 197788 < 0.01)
 opt = torch.optim.Adam(net.parameters(), lr=1e-2)
 BATCH_SIZE = 64  # TWEAK-3: 400
 EPOCHS = 60

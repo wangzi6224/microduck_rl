@@ -51,6 +51,20 @@ print(f"店 A：2 × 0.2 + (−1) × (−0.1) = {u(dot_A)}；加运费 0.1 → z
 print(f"店 B：(−3) × 0.2 + 1 × (−0.1) = {u(dot_B)}；加运费 0 → z = {u(z_B)}")
 check("店 A：0.4 + 0.1 = 0.5，加运费 0.1 → z = 0.6", math.isclose(dot_A, 0.5) and math.isclose(z_A, 0.6))
 check("店 B：−0.6 − 0.1 = −0.7，运费 0 → z = −0.7", math.isclose(dot_B, -0.7) and math.isclose(z_B, -0.7))
+check("负乘负得正：(−1) × (−0.1) = +0.1", math.isclose((-1) * (-0.1), 0.1))
+
+# 6.1 节：z 是负数时 e^z 落在 0 和 1 之间——“负几次方”就是“除以几次 e”
+print(f"e ≈ {math.e:.3f}；e^0 = {math.exp(0):g}；e^−1 = 1 ÷ e ≈ {math.exp(-1):.3f}；e^−2 ≈ {math.exp(-2):.3f}；"
+      f"e^−5 ≈ {math.exp(-5):.4f}")
+check("e ≈ 2.718；e^0 = 1；e^−1 = 1 ÷ 2.718 ≈ 0.368；再除一次 e：0.368 ÷ 2.718 ≈ 0.135；e^−5 ≈ 0.0067",
+      round(math.e, 3) == 2.718 and math.exp(0) == 1.0 and round(math.exp(-1), 3) == 0.368 and round(1 / 2.718, 3) == 0.368
+      and round(math.exp(-2), 3) == 0.135 and round(0.368 / 2.718, 3) == 0.135 and round(math.exp(-5), 4) == 0.0067)
+z_neg = np.linspace(-30.0, -1e-6, 3001)
+check("z 是负数时 e^z 都在 0 和 1 之间（越往左越贴近 0，但到不了 0），所以 e^z − 1 都在 −1 和 0 之间",
+      bool(np.all((np.exp(z_neg) > 0) & (np.exp(z_neg) < 1))) and bool(np.all((elu(z_neg) > -1) & (elu(z_neg) < 0))))
+check("e^−0.7 完整是 0.496585…，正文的 0.4966 是它四舍五入到 4 位", f"{math.exp(-0.7):.6f}" == "0.496585")
+check("z 不是整数也一样：e^−0.7 ≈ 0.4966 夹在 e^0 = 1 和 e^−1 ≈ 0.368 之间",
+      math.exp(-1) < math.exp(-0.7) < math.exp(0) and 0.368 < 0.4966 < 1)
 
 elu_B = float(elu(z_B))
 print(f"ReLU(0.6) = {u(float(relu(z_A)))}，ReLU(−0.7) = {u(float(relu(z_B)))}")
@@ -61,7 +75,13 @@ check("ELU：0.6 原样通过；−0.7 → e^−0.7 − 1 ≈ −0.5034", float(
 check("字面值重算：e^−0.7 ≈ 0.4966，0.4966 − 1 = −0.5034", round(math.exp(-0.7), 4) == 0.4966 and round(0.4966 - 1, 4) == -0.5034)
 check("控制台 Math.exp(-0.7) - 1 的全精度 −0.5034146962085905（正文和 JS 注释里的那个数）",
       repr(math.exp(-0.7) - 1) == "-0.5034146962085905")
+z_A_low = dot_A + (-1.0)          # 6.1 节：店 A 的运费若是 −1 而不是 0.1
+print(f"运费的用处：店 A 的运费若是 −1，z = {u(dot_A)} − 1 = {u(z_A_low)}，过 ELU → {float(elu(z_A_low)):.3f}".replace("-", "−"))
+check("运费的用处：店 A 的运费若是 −1，同一张清单 z = 0.5 − 1 = −0.5，成了负数，过 ELU 只剩 −0.393（门表 z = −0.5 那一行）",
+      math.isclose(z_A_low, -0.5) and round(float(elu(z_A_low)), 3) == -0.393)
 
+check("门表 z = −1 那一行手算：ReLU 记 0；ELU = e^−1 − 1 ≈ 0.368 − 1 = −0.632",
+      float(relu(-1.0)) == 0.0 and round(float(elu(-1.0)), 3) == -0.632 and round(0.368 - 1, 3) == -0.632)
 Z_TABLE = [-3.0, -2.0, -1.0, -0.5, 0.0, 0.5, 1.0, 3.0]
 table(["门前的数 z", "ReLU(z)", "ELU(z)"], [[z, float(relu(z)), float(elu(z))] for z in Z_TABLE], floatfmt=".3f")
 check("表里 ELU 的四个负数：−0.950、−0.865、−0.632、−0.393",
@@ -161,6 +181,11 @@ z1 = W1 @ x_mini + b1
 h1 = elu(z1)                     # 门对每一项各过一次
 print("W₁ =", W1.tolist(), "  b₁ =", b1.tolist())
 print(f"W₁x + b₁ = ({u(z1[0])}, {u(z1[1])})  → 逐项过门 → h₁ = ({u(h1[0])}, {u(h1[1])})")
+Wx = W1 @ x_mini                 # 6.2 节写全的那一步：每一行和清单点积一次，先不加运费
+print(f"W₁x：第 1 行 2 × 0.2 + (−1) × (−0.1) = {u(Wx[0])}，第 2 行 (−3) × 0.2 + 1 × (−0.1) = {u(Wx[1])}；"
+      f"逐行加运费 → ({u(Wx[0] + b1[0])}, {u(Wx[1] + b1[1])})")
+check("W₁x 写全：每一行和清单点积一次 = (0.5, −0.7)；再逐行加运费 (0.5 + 0.1, −0.7 + 0) = (0.6, −0.7)",
+      np.allclose(Wx, [0.5, -0.7]) and np.allclose(Wx + b1, [0.6, -0.7]) and math.isclose(0.5 + 0.1, 0.6))
 check("矩阵写法 W₁x + b₁ 就是两家店各算一次：(0.6, −0.7)", np.allclose(z1, [z_A, z_B]))
 check("门逐项过：h₁ = (0.6, −0.5034)", np.allclose(np.round(h1, 4), [0.6, -0.5034]))
 lin = torch.nn.Linear(2, 2)
@@ -174,6 +199,7 @@ check("自测：店 B 的运费从 0 改成 1 → z = (0.6, 0.3)，都不是负�
 first_layer = torch.nn.Linear(61, 512)
 check("项目第一层：512 × 61 的价格表 + 512 个运费 = 31,744 个旋钮（第 2 章 2.6 节）",
       sum(p.numel() for p in first_layer.parameters()) == 31744)
+check("6.2 节当场写的：512 × 61 = 31,232 格，加 512 笔运费 = 31,744", 512 * 61 == 31232 and 31232 + 512 == 31744)
 
 # ---------------------------------------------------------------------------
 banner("3. 把层叠起来：上一排报出的清单，是下一排的购物清单")
@@ -204,6 +230,12 @@ PROJECT_SIZES = [61, 512, 256, 128, 14]
 print("项目 actor 的几串数：", " → ".join(str(s) for s in SIZES),
       f"（{len(SIZES)} 串数，{len(SIZES) - 1} 层 = {len(SIZES) - 1} 张价格表，其中 {len(HIDDEN)} 层是隐藏层）")
 check("actor：61 → 512 → 256 → 128 → 14：5 串数、4 层（4 张价格表），其中 3 层是隐藏层", SIZES == PROJECT_SIZES)
+check("项目的三个宽度一个是另一个的两倍：128 × 2 = 256，256 × 2 = 512", PROJECT_SIZES[1:4] == [512, 256, 128]
+      and 128 * 2 == 256 and 256 * 2 == 512)
+shapes = [tuple(torch.nn.Linear(i, o).weight.shape) for i, o in zip(PROJECT_SIZES[:-1], PROJECT_SIZES[1:])]
+print("四张价格表的形状（行 = 报出几个 = 店数，列 = 吃进几个 = 清单项数）：", shapes)
+check("箭头写 61 → 512，价格表却是 512 行 61 列：W₁…W₄ = 512×61、256×512、128×256、14×128（torch 的 Linear 也这样存）",
+      shapes == [(512, 61), (256, 512), (128, 256), (14, 128)])
 
 # ---------------------------------------------------------------------------
 banner("3b. 画图：figures/ch06_stack.png（四层堆叠，条的长度按数的个数成比例）")
@@ -250,6 +282,42 @@ check("合并成一家店：价格 (1×2 + (−2)×(−3), 1×(−1) + (−2)×1
       np.allclose(W_merged, [8, -3]) and math.isclose(b_merged, 0.1))
 check("合并店：8 × 0.2 + (−3) × (−0.1) + 0.1 = 1.6 + 0.3 + 0.1 = 2.0，和两层一样",
       math.isclose(mu_merged, 2.0) and math.isclose(mu_merged, mu_nogate))
+check("运费是“什么都不买时的账”：清单 (0, 0) 拆掉门，店 C = 1 × 0.1 + (−2) × 0 + 0 = 0.1",
+      math.isclose(float((W2 @ (W1 @ np.zeros(2) + b1) + b2)[0]), 0.1))
+
+
+def bill_A(x1, x2):
+    """6.4 节代账第 1 步：店 A 的账 = 2x₁ − x₂ + 0.1。"""
+    return 2 * x1 - x2 + 0.1
+
+
+def bill_B(x1, x2):
+    """6.4 节代账第 1 步：店 B 的账 = −3x₁ + x₂（运费 0）。"""
+    return -3 * x1 + x2
+
+
+GRID = [(a, c) for a in (-2.0, -0.5, 0.0, 0.2, 1.0, 3.0) for c in (-1.0, -0.1, 0.0, 1.0, 2.5)]   # 30 张随手挑的清单
+check("代账第 1 步：代回 (0.2, −0.1)，店 A = 0.4 + 0.1 + 0.1 = 0.6，店 B = −0.6 − 0.1 = −0.7",
+      math.isclose(bill_A(0.2, -0.1), 0.6) and math.isclose(bill_B(0.2, -0.1), -0.7)
+      and math.isclose(0.4 + 0.1 + 0.1, 0.6) and math.isclose(-0.6 - 0.1, -0.7))
+check("代账第 2–4 步：1 × (店 A 的账) + (−2) × (店 B 的账) = 8x₁ − 3x₂ + 0.1，30 张清单逐个核对，也等于拆掉门的两层网络",
+      all(math.isclose(1 * bill_A(a, c) + (-2) * bill_B(a, c) + 0, 8 * a - 3 * c + 0.1, abs_tol=1e-12)
+          and math.isclose(float((W2 @ (W1 @ np.array([a, c]) + b1) + b2)[0]), 8 * a - 3 * c + 0.1, abs_tol=1e-12)
+          for a, c in GRID))
+check("第 3 步展开：(−2) × (−3x₁ + x₂) = 6x₁ − 2x₂；补课里代 x₁ = 0.2、x₂ = −0.1：(−2) × (−0.7) = 1.4，1.2 + 0.2 = 1.4",
+      all(math.isclose((-2) * (-3 * a + c), 6 * a - 2 * c, abs_tol=1e-12) for a, c in GRID)
+      and math.isclose((-2) * ((-3) * 0.2 + (-0.1)), 1.4) and math.isclose(6 * 0.2 - 2 * (-0.1), 1.4)
+      and math.isclose(1.2 + 0.2, 1.4))
+check("补课：3 × (4 + 5) = 3 × 9 = 3 × 4 + 3 × 5 = 12 + 15 = 27；合并同类项 2 × 0.2 + 6 × 0.2 = 0.4 + 1.2 = 1.6 = 8 × 0.2",
+      3 * (4 + 5) == 3 * 9 == 3 * 4 + 3 * 5 == 12 + 15 == 27
+      and math.isclose(2 * 0.2 + 6 * 0.2, 1.6) and math.isclose(0.4 + 1.2, 1.6) and math.isclose(8 * 0.2, 1.6))
+check("x₁ 前面的 8 = 2 + 6：走店 A 那条路 1 × 2，走店 B 那条路 (−2) × (−3)", 1 * 2 + (-2) * (-3) == 2 + 6 == 8)
+split = float(elu(-0.6)) + float(elu(-0.1))
+print(f"门不能拆开过：先加再过门 ELU(−0.7) = {u(elu_B)}；分开过门再加 ELU(−0.6) + ELU(−0.1) = "
+      f"{u(float(elu(-0.6)))} + ({u(float(elu(-0.1)))}) = {u(split)}")
+check("门不能拆开过：ELU(−0.6 + (−0.1)) = −0.5034；ELU(−0.6) + ELU(−0.1) = −0.4512 + (−0.0952) = −0.5464，不一样",
+      round(elu_B, 4) == -0.5034 and round(float(elu(-0.6)), 4) == -0.4512 and round(float(elu(-0.1)), 4) == -0.0952
+      and round(split, 4) == -0.5464 and round(-0.4512 + (-0.0952), 4) == -0.5464 and not math.isclose(split, elu_B))
 x11 = np.array([1.0, 1.0])
 check("自测：x = (1, 1)：两层拆掉门 1.1 + 4 = 5.1；合并店 8 − 3 + 0.1 = 5.1",
       math.isclose(float((W2 @ (W1 @ x11 + b1) + b2)[0]), 5.1) and math.isclose(float(W_merged @ x11 + b_merged), 5.1))
@@ -259,6 +327,14 @@ W1r, W2r, xr = rng.normal(size=(4, 3)), rng.normal(size=(2, 4)), rng.normal(size
 check("更大的随机例子（4×3 和 2×4 两张表）：不夹门时，先后乘 = 先合并成一张 2×3 的表再乘",
       np.allclose(W2r @ (W1r @ xr), (W2r @ W1r) @ xr))
 check("同一个随机例子夹上 ELU，就不再等于那张合并的表", not np.allclose(W2r @ elu(W1r @ xr), (W2r @ W1r) @ xr))
+Wx_mini = W1 @ x_mini            # 进阶折叠：(0.5, −0.7)
+check("进阶①展开：W₂(W₁x + b₁) = W₂W₁x + W₂b₁——左边 W₂(0.6, −0.7) = 0.6 + 1.4 = 2.0；右边 (0.5 + 1.4) + (0.1 + 0) = 1.9 + 0.1 = 2.0",
+      math.isclose(float((W2 @ (Wx_mini + b1))[0]), 2.0) and math.isclose(float((W2 @ Wx_mini)[0]), 1.9)
+      and math.isclose(float((W2 @ b1)[0]), 0.1) and math.isclose(0.6 + 1.4, 2.0) and math.isclose(1.9 + 0.1, 2.0))
+check("进阶②先合并再乘：(W₂W₁)x = (8, −3)·(0.2, −0.1) = 1.6 + 0.3 = 1.9 = W₂(W₁x)",
+      math.isclose(float(W_merged @ x_mini), 1.9) and math.isclose(1.6 + 0.3, 1.9)
+      and math.isclose(float(W_merged @ x_mini), float((W2 @ Wx_mini)[0])))
+check("进阶③新运费：W₂b₁ + b₂ = 1 × 0.1 + (−2) × 0 + 0 = 0.1", math.isclose(float((W2 @ b1 + b2)[0]), 0.1))
 
 
 def mini_net(x1, with_gate):
@@ -283,6 +359,25 @@ check("字面值重算：−6.6347 − (−12.7776) = 6.143，0.3903 − (−6.6
       round(-6.6347 - (-12.7776), 3) == 6.143 and round(0.3903 - (-6.6347), 3) == 7.025)
 wg4 = [round(v, 4) for v in wg]
 check("字面值重算：用表里印出的 4 位小数相减，也得这四个数", [round(b - a, 3) for a, b in zip(wg4, wg4[1:])] == step_wg)
+
+# 6.4 节：x₁ = 0 那一行（清单 (0, −0.1)）手算
+x_row0 = np.array([0.0, -0.1])
+zA0, zB0 = float(W1[0] @ x_row0 + b1[0]), float(W1[1] @ x_row0 + b1[1])
+print(f"x₁ = 0 那一行：店 A 的 z = {u(zA0)}，店 B 的 z = {u(zB0)} → 过门 {float(gate(zB0)):.5f}；"
+      f"店 C = 1 × {u(float(gate(zA0)))} + (−2) × ({float(gate(zB0)):.5f}) = {mini_net(0.0, True):.5f}".replace("-", "−"))
+check("x₁ = 0 那一行，拆掉门：8 × 0 + (−3) × (−0.1) + 0.1 = 0.3 + 0.1 = 0.4",
+      math.isclose(mini_net(0.0, False), 0.4) and math.isclose(0.3 + 0.1, 0.4))
+check("x₁ = 0 那一行，夹着门：店 A 0.2，店 B −0.1 → e^−0.1 − 1 ≈ −0.09516，店 C = 0.2 + 0.19032 = 0.39032 ≈ 0.3903",
+      math.isclose(zA0, 0.2) and math.isclose(zB0, -0.1) and round(float(gate(zB0)), 5) == -0.09516
+      and math.isclose(0.2 + 0.19032, 0.39032) and math.isclose(2 * 0.09516, 0.19032)
+      and round(0.39032, 4) == 0.3903 and round(mini_net(0.0, True), 4) == 0.3903)
+fit_b = mu_mini - float(W_merged @ x_mini)      # 价格 (8, −3) 的店，运费凑成多少才能在 x₁ = 0.2 对上网络
+print(f"凑一家店：价格 (8, −3)、运费 {fit_b:.4f}：x₁ = 0.2 时得 {float(W_merged @ x_mini) + fit_b:.4f}；"
+      f"x₁ = 0 时得 {0.3 + fit_b:.4f}，网络却是 {mini_net(0.0, True):.4f}".replace("-", "−"))
+check("凑一家店：价格 (8, −3)、运费 −0.2932，在 x₁ = 0.2 得 1.9 − 0.2932 = 1.6068，和网络一样",
+      round(fit_b, 4) == -0.2932 and math.isclose(1.6 + 0.3, 1.9) and round(1.9 - 0.2932, 4) == 1.6068)
+check("可换到 x₁ = 0（清单 (0, −0.1)），它得 0 + 0.3 − 0.2932 = 0.0068，网络却是 0.3903：一张清单对上不算数",
+      round(0.3 + fit_b, 4) == 0.0068 and round(0.3 - 0.2932, 4) == 0.0068 and round(mini_net(0.0, True), 4) == 0.3903)
 
 # ---------------------------------------------------------------------------
 banner("4b. 画图：figures/ch06_gate_vs_nogate.png（拆掉门是直线，留着门才会弯）")
@@ -333,6 +428,11 @@ else:
 banner("5. 数一数旋钮：每一层 = 价格表的格子 + 运费")
 mini_counts = [n_out * n_in + n_out for n_in, n_out in ((2, 2), (2, 1))]
 check("迷你网络：第一层 2×2 + 2 = 6，第二层 1×2 + 1 = 3，一共 9 个旋钮", mini_counts == [6, 3] and sum(mini_counts) == 9)
+knobs_mini = np.concatenate([W1.ravel(), b1, W2.ravel(), b2])   # 6.5 节一个一个点名的 9 个旋钮
+print("迷你网络的 9 个旋钮：W₁", W1.ravel().tolist(), "b₁", b1.tolist(), "W₂", W2.ravel().tolist(), "b₂", b2.tolist())
+check("点名：W₁ 的 2、−1、−3、1，b₁ 的 0.1、0，W₂ 的 1、−2，b₂ 的 0——4 + 2 + 2 + 1 = 9 个，6 + 3 = 9",
+      knobs_mini.tolist() == [2.0, -1.0, -3.0, 1.0, 0.1, 0.0, 1.0, -2.0, 0.0] and 4 + 2 + 2 + 1 == 6 + 3 == 9)
+check("心算 512 × 61：512 × 60 = 30,720，再加一个 512 = 31,232", 512 * 60 == 30720 and 30720 + 512 == 31232 == 512 * 61)
 
 
 def count(sizes):
@@ -348,7 +448,13 @@ total_mlp = sum(counts)
 check("四层：31,744 + 131,328 + 32,896 + 1,806 = 197,774", counts == [31744, 131328, 32896, 1806] and total_mlp == 197774)
 check("每层 = 输出个数 × (输入个数 + 1)：512 × 62、256 × 513、128 × 257、14 × 129",
       [512 * 62, 256 * 513, 128 * 257, 14 * 129] == [31744, 131328, 32896, 1806])
+check("表的第二行这样读：256 家店，每家看 512 个数，256 × 512 = 131,072 格，加 256 笔运费 = 131,328",
+      256 * 512 == 131072 and 131072 + 256 == 131328)
+check("提公因数：512 × 61 + 512 = 512 × 61 + 512 × 1 = 512 × (61 + 1) = 512 × 62 = 31,744",
+      512 * 61 + 512 == 512 * 61 + 512 * 1 == 512 * (61 + 1) == 512 * 62 == 31744)
+check("补课：3 × 4 + 3 × 1 = 12 + 3 = 15；3 × (4 + 1) = 3 × 5 = 15", 3 * 4 + 3 * 1 == 12 + 3 == 15 == 3 * (4 + 1) == 3 * 5)
 check("中间那张 256 × 512 的表最大：131,328 / 197,774 ≈ 0.664，约三分之二", round(131328 / 197774, 3) == 0.664)
+check("0.664 是保留 3 位小数，完整是 0.66403…；三分之二 ≈ 0.667", f"{131328 / 197774:.5f}" == "0.66403" and round(2 / 3, 3) == 0.667)
 
 actor = MLPModel(TensorDict({"actor": torch.zeros(1, N_OBS)}, batch_size=[1]), {"actor": ["actor"]}, "actor", N_ACT,
                  HIDDEN, "elu", True, {"class_name": "GaussianDistribution", "init_std": 1.0, "std_type": "scalar"})
@@ -456,6 +562,12 @@ out_np = forward_by_hand(obs.numpy())
 print("torch 前 5 个输出:", out_torch[:5])
 print("numpy 前 5 个输出:", out_np[:5])
 check("numpy 手写 = rsl_rl 的 MLP（14 个输出逐个相差不到 0.00001）", float(np.max(np.abs(out_torch - out_np))) < 1e-5)
+max_gap = float(np.max(np.abs(out_torch - out_np)))
+print(f"两边实际的最大差：{max_gap:.1e}；存小数的格式：torch {out_torch.dtype}（每个数大约 {24 * math.log10(2):.1f} 位数字），"
+      f"numpy 这边 {out_np.dtype}（大约 {53 * math.log10(2):.1f} 位）")
+check("差的那一点点来自舍入：torch 默认 float32（大约 7 位数字），实验里 numpy 这边是 float64（大约 16 位），实际的差比 0.00001 小得多",
+      out_torch.dtype == np.float32 and out_np.dtype == np.float64 and round(24 * math.log10(2)) == 7
+      and round(53 * math.log10(2)) == 16 and max_gap < 1e-6)
 check("没有随机：同一个观测喂两次，输出逐位相同", np.array_equal(out_torch, again))
 outs = []
 with torch.no_grad():
@@ -516,8 +628,21 @@ if cfg_path.is_file():
     print("microduck_velocity_env_cfg.py 的 MicroduckRlCfg：actor / critic 都是 hidden_dims=(512, 256, 128)、activation=\"elu\"")
     check(f"项目配置：正文引用的 {len(CFG_LINES)} 行原样存在、顺序一致（两张网络的隐藏层、门、σ 的设置）",
           at >= 0 and lines_in_order(cfg_text[at:], CFG_LINES))
+    check("6.7 节的例子①：躯干真实的速度（base_lin_vel）只加给 critic，actor 那份删掉了",
+          'del cfg.observations["actor"].terms["base_lin_vel"]' in cfg_text
+          and 'cfg.observations["critic"].terms["base_lin_vel"] = ObservationTermCfg(' in cfg_text)
 else:
     print("  （没找到项目的 env cfg，跳过这一项）")
+mjlab_spec = importlib.util.find_spec("mjlab")
+mjlab_vel = Path(mjlab_spec.origin).parent / "tasks" / "velocity" / "velocity_env_cfg.py" if mjlab_spec and mjlab_spec.origin else None
+if mjlab_vel and mjlab_vel.is_file():
+    vel_text = mjlab_vel.read_text(encoding="utf-8")
+    at_c = vel_text.find("critic_terms = {")
+    check("6.7 节的例子②：脚碰没碰到地（foot_contact）在 mjlab 模板里只写在 critic 那份清单里",
+          at_c >= 0 and '"foot_contact": ObservationTermCfg(' in vel_text[at_c:]
+          and '"foot_contact": ObservationTermCfg(' not in vel_text[:at_c])
+else:
+    print("  （当前 Python 环境里没有 mjlab，跳过 foot_contact 的核对；用 uv run 运行就会核对）")
 
 MLP_LINES = ["last_activation: str | None = None,", "activation_mod = resolve_nn_activation(activation)",
              "layers.append(nn.Linear(input_dim, hidden_dims_processed[0]))", "layers.append(activation_mod)",

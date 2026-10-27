@@ -196,6 +196,19 @@ check("E[X²] = 91/6 ≈ 15.17，不等于 3.5² = 12.25", round(E_sq, 2) == 15.
 check("字面值重算：0 + 1.5 + 4 = 5.5；(0 + 5 + 20)/3 → 8.33；(5+7+9+11+13+15)/6 = 10；91/6 → 15.17；15.17 − 12.25 = 2.92",
       0 + 1.5 + 4 == 5.5 and round((0 + 5 + 20) / 3, 2) == 8.33 and (5 + 7 + 9 + 11 + 13 + 15) / 6 == 10 and round(91 / 6, 2) == 15.17
       and round(15.17 - 12.25, 2) == 2.92)
+check("一个和除以 6 = 每项各除以 6 再相加：(2 + 4) ÷ 2 = 3 = 2 ÷ 2 + 4 ÷ 2；(1+…+6) ÷ 6 = Σ x × 1/6",
+      (2 + 4) / 2 == 3 == 2 / 2 + 4 / 2 and math.isclose(float(faces.sum()) / 6, float(np.sum(faces * (1 / 6)))))
+check("每条细条的概率不舍入是 (1/1.7) × 0.1 = 0.1/1.7 = 1/17", math.isclose((1 / 1.7) * 0.1, 0.1 / 1.7) and math.isclose(0.1 / 1.7, 1 / 17))
+first_half = float(np.sum(2 * faces * p_dice))                     # 拆成两堆：“2 × x × 1/6”那一堆
+second_half = float(np.sum(3 * p_dice))                            # “3 × 1/6”那一堆
+check("线性为什么成立：逐面的 (2x+3)×1/6 拆成两堆，2 × (Σ x/6) = 2 × 3.5 = 7，3 × (Σ 1/6) = 3 × 1 = 3，合起来 10；分配律 (2+3)×4 = 2×4 + 3×4 = 20",
+      math.isclose(first_half, 7) and math.isclose(second_half, 3) and math.isclose(first_half + second_half, E_2x3)
+      and (2 + 3) * 4 == 2 * 4 + 3 * 4 == 20 and 2 * 3.5 == 7 and 3 * 1 == 3)
+first_die_total = int(np.sum(np.broadcast_to(faces[:, None], (6, 6))))   # 36 种组合里“第一颗的点数”加起来
+second_die_total = int(np.sum(np.broadcast_to(faces[None, :], (6, 6))))
+check("两颗骰子：36 种组合；“第一颗的点数”加起来 6 × 21 = 126，第二颗也是 126；36 个和加起来 252，252 ÷ 36 = 7；126 ÷ 36 = 3.5",
+      pair_sums.size == 36 == 6 * 6 and first_die_total == 126 == 6 * 21 and second_die_total == 126 and int(pair_sums.sum()) == 252 == 126 + 126
+      and 252 / 36 == 7 and 126 / 36 == 3.5 and int(faces.sum()) == 21)
 
 # ---------------------------------------------------------------------------
 banner("4. 方差与标准差：散得多开")
@@ -256,6 +269,35 @@ check("代码里的小坑：np.var([1, 3]) = 1（除以 n），torch.var 默认�
 big = np.random.default_rng(6).uniform(lo, hi, size=10_000)
 check("样本多了两种算法几乎没差别：1 万个电压，除以 n 和除以 n − 1 的标准差相差不到 0.0001",
       abs(float(big.std()) - float(big.std(ddof=1))) < 1e-4)
+
+print("\n另一种算法：方差 = 平方的平均 − 平均的平方。先把 (x − 3.5)² 展开成 x² − 7x + 12.25：")
+table(["点数 x", "(x − 3.5)²", "x² − 7x + 12.25"], [[int(x), num((x - 3.5) ** 2), num(x * x - 7 * x + 12.25)] for x in faces])
+check("展开括号：六个面上 (x − 3.5)² 都等于 x² − 7x + 12.25；x = 1 时两边都是 6.25（1 − 7 + 12.25 = 6.25）",
+      all(math.isclose((x - 3.5) ** 2, x * x - 7 * x + 12.25) for x in faces) and (1 - 3.5) ** 2 == 6.25 == 1 - 7 + 12.25)
+check("三块各自求平均：E[X²] − 7 × E[X] + 12.25 = 方差；字面值 15.17 − 24.5 + 12.25 = 2.92；−7 × 3.5 = −24.5；7 = 2 × 3.5，12.25 = 3.5²",
+      math.isclose(E_sq - 7 * E_dice + 12.25, var_dice) and round(15.17 - 24.5 + 12.25, 2) == 2.92 and -7 * 3.5 == -24.5
+      and 7 == 2 * 3.5 and 12.25 == 3.5**2 and math.isclose(E_sq - 2 * E_dice * E_dice + E_dice**2, E_sq - E_dice**2))
+new_vals = 2 * faces + 3
+new_dev = new_vals - float(np.mean(new_vals))
+var_new = float(np.mean(new_dev**2))
+print(f"平移和拉伸：2X + 3 的六个值 {new_vals.tolist()}，平均 {num(float(np.mean(new_vals)))}，偏差 {[int(d) for d in new_dev]}，"
+      f"偏差² 之和 {num(float(np.sum(new_dev**2)))}，方差 70/6 = {var_new:.2f}，标准差 {math.sqrt(var_new):.2f}")
+check("2X + 3：新的偏差 −5、−3、−1、1、3、5，正好是原来的 2 倍；偏差² 25、9、1、1、9、25，加起来 70",
+      [int(d) for d in new_dev] == [-5, -3, -1, 1, 3, 5] and np.allclose(new_dev, 2 * dev)
+      and [int(d * d) for d in new_dev] == [25, 9, 1, 1, 9, 25] and math.isclose(float(np.sum(new_dev**2)), 70))
+check("方差乘 2² = 4、标准差乘 2：70/6 → 11.67，70 = 4 × 17.5；√11.67 → 3.42 = 2 × 1.71；平移的 +3 不改变方差",
+      math.isclose(var_new, 4 * var_dice) and round(70 / 6, 2) == 11.67 and 70 == 4 * 17.5 and round(math.sqrt(11.67), 2) == 3.42
+      and round(2 * 1.71, 2) == 3.42 and math.isclose(math.sqrt(var_new), 2 * std_dice)
+      and math.isclose(float(np.var(faces + 3)), var_dice) and math.isclose(float(np.var(-faces)), var_dice) and abs(-2) == 2)
+
+mids10 = (np.arange(10) + 0.5) / 10                        # 进阶：U(0, 1) 切成 10 条、100 条，算“平方的平均”
+mids100 = (np.arange(100) + 0.5) / 100
+sq10, sq100 = float(np.sum(mids10**2 * 0.1)), float(np.sum(mids100**2 * 0.01))
+print(f"进阶：U(0, 1) 的平方的平均——10 条：{sq10:.4f}，100 条：{sq100:.6f}（越切越接近 1/3）；1/3 − 1/4 = 1/12 = {1 / 12:.4f}；"
+      f"× 1.7² = 2.89 → {2.89 / 12:.4f}")
+check("宽度² ÷ 12 的来历：10 条得 0.3325，100 条得 0.333325（→ 1/3）；1/3 − 1/4 = 4/12 − 3/12 = 1/12 ≈ 0.0833；2.89 ÷ 12 → 0.2408；1.7² = 2.89",
+      round(sq10, 4) == 0.3325 and round(sq100, 6) == 0.333325 and math.isclose(1 / 3 - 1 / 4, 1 / 12) and round(1 / 12, 4) == 0.0833
+      and round(2.89 / 12, 4) == 0.2408 and round(1.7**2, 2) == 2.89 and math.isclose(4 / 12 - 3 / 12, 1 / 12))
 check("自测：等概率的 2、4、9 → 均值 5，方差 (9 + 1 + 16)/3 ≈ 8.67，标准差 ≈ 2.94（字面值：26/3 → 8.67，√8.67 → 2.94）",
       np.mean([2, 4, 9]) == 5 and round(float(np.var([2, 4, 9])), 2) == 8.67 and round(float(np.std([2, 4, 9])), 2) == 2.94
       and round(26 / 3, 2) == 8.67 and round(math.sqrt(8.67), 2) == 2.94)
@@ -343,6 +385,21 @@ check("字面值重算（四舍五入）：0.4907 ÷ 2 → 0.2454；0.4907 ÷ 10
 check("自测：σ = 2，要平均值的标准差降到 0.2 得抽 100 个；降到 0.02 得抽 10000 个", 2 / math.sqrt(100) == 0.2 and 2 / math.sqrt(10000) == 0.02)
 check("样本数 × 4，平均值的散布 ÷ 2；× 100，÷ 10；× 10000，÷ 100（和理论 σ/√n 相差不到 6%）",
       all(abs(r[1] - r[2]) / r[2] < 0.06 for r in spread_rows))
+check("σ 大一倍、样本要多 4 倍：(2σ)/√(4n) = 2σ/(2√n) = σ/√n（σ = 0.4907、n = 100 代进去核对）",
+      math.isclose(2 * std_volt / math.sqrt(4 * 100), std_volt / math.sqrt(100)) and 2 * 2 == 4)
+coins = np.array([[a, b] for a in (1, -1) for b in (1, -1)])            # 进阶：两枚 ±1 硬币的四种结果
+coin_sum = coins.sum(axis=1)
+cross = coins[:, 0] * coins[:, 1]
+print(f"\n进阶：两枚 ±1 硬币。四种结果的和 {coin_sum.tolist()}，和的平方 {(coin_sum**2).tolist()}，"
+      f"和的方差 = {float(np.mean(coin_sum**2)):g}；交叉项“第一枚 × 第二枚” {cross.tolist()}，平均 {float(cross.mean()):g}")
+check("一枚 ±1 硬币：平均 0，方差 1；两枚的和：方差 (4 + 0 + 0 + 4)/4 = 2 = 1 + 1；交叉项 +1、−1、−1、+1 平均是 0",
+      float(np.mean([1, -1])) == 0 and float(np.var([1, -1])) == 1 and float(np.mean(coin_sum**2)) == 2 == (4 + 0 + 0 + 4) / 4
+      and cross.tolist() == [1, -1, -1, 1] and float(cross.mean()) == 0 and coin_sum.tolist() == [2, 0, 0, -2])
+same = np.array([2, -2])                                                 # 第二枚总跟第一枚一样：和只有 2 和 −2
+check("n 枚的和方差是 n、标准差 √n；平均值的标准差 √n ÷ n = 1/√n（n = 100：10 ÷ 100 = 1/10）；两枚总一样时方差是 4 不是 2",
+      all(math.isclose(float(np.var(np.random.default_rng(11).choice([1, -1], size=(20000, n)).sum(axis=1))), n, rel_tol=0.05)
+          for n in (2, 4, 9))
+      and math.isclose(math.sqrt(100) / 100, 1 / math.sqrt(100)) and 10 / 100 == 0.1 and float(np.mean(same**2)) == 4)
 check("正文引用的数：0.49 → 0.245 → 0.049 → 0.0049",
       round(spread_rows[0][1], 2) == 0.49 and round(spread_rows[1][1], 3) == 0.245
       and round(spread_rows[2][1], 3) == 0.049 and round(spread_rows[3][1], 4) == 0.0049)
@@ -487,6 +544,12 @@ s_kernel = math.sqrt(2) * sigma_demo
 xs_demo = np.array([0.0, 0.3, 1.0])
 check("和第 1 章钟形打分同形：exp(−x²/s²) 与 exp(−x²/(2σ²)) 在 s = √2 σ 时处处相等",
       np.allclose(np.exp(-(xs_demo**2) / s_kernel**2), np.exp(-(xs_demo**2) / (2 * sigma_demo**2))))
+kx = (np.arange(-600, 600) + 0.5) * 0.01                          # σ = 1 的“打分钟” exp(−x²)，当成分布量它的标准差
+kw = np.exp(-(kx**2))
+kernel_std = math.sqrt(float(np.sum(kw * kx**2) / np.sum(kw)))
+print(f"σ = 1 的打分钟 exp(−x²) 要是当成分布：细条量出的标准差 = {kernel_std:.4f}（1 ÷ √2 = {1 / math.sqrt(2):.4f}）")
+check("开根号的规矩 √(4 × 9) = √36 = 6 = 2 × 3；打分钟 exp(−x²) 的标准差是 1/√2 = 0.7071（细条量出来也是 0.7071）；2 × 1² = 2",
+      math.sqrt(4 * 9) == 6 == 2 * 3 and round(kernel_std, 4) == 0.7071 and round(1 / math.sqrt(2), 4) == 0.7071 and 2 * 1**2 == 2)
 
 # ---------------------------------------------------------------------------
 banner("6b. 画图：figures/ch04_gaussian_68_95.png（一口钟：高度、面积、68% 和 95%）")
@@ -586,6 +649,9 @@ check("同一个 ε 放进通勤那口钟：35 + 5 × (−1.0712) = 29.6 分钟"
 check("正文引用的数：10 万次的平均 0.461、标准差 0.998", round(float(many_actions.mean()), 3) == 0.461 and round(float(many_actions.std()), 3) == 0.998)
 check("抽 10 万次：样本的平均 ≈ μ，样本的标准差 ≈ σ（容差 0.01）",
       abs(many_actions.mean() - float(mean[0])) < 0.01 and abs(many_actions.std() - POLICY_STD) < 0.01 * max(1.0, POLICY_STD))
+renorm = (many_actions - many_actions.mean()) / many_actions.std()     # 倒着用 4.4 节的两条规则：先减均值，再除以标准差
+check("任何一批数减去自己的均值、再除以自己的标准差，均值变 0、标准差变 1（拉伸规则：σ × 1/σ = 1）",
+      abs(float(renorm.mean())) < 1e-9 and abs(float(renorm.std()) - 1) < 1e-9 and math.isclose(POLICY_STD * (1 / POLICY_STD), 1.0))
 
 print("\n“给定观测”：同一张网络，观测换了，钟的中心跟着换。迷你网络 μ(s) = 0.5 × s（教学构造）：")
 for s_obs in (0.2, -1.0):
@@ -748,6 +814,15 @@ print(f"\n14 个 {P_EACH} 连乘 = {P_EACH**14:.7f}（约 {P_EACH**14:.1e}）；
 print(f"1000 个 {P_EACH} 连乘：计算机得到 {P_EACH**1000}（小到存不下，变成了 0）；取 ln 再相加 = {1000 * math.log(P_EACH):.1f}，好好的")
 check("0.4 的 14 次方 ≈ 0.0000027；14 × ln 0.4 = −12.83", round(P_EACH**14, 7) == 0.0000027 and round(14 * math.log(P_EACH), 2) == -12.83)
 check("1000 个 0.4 连乘下溢成 0；log 相加是 −916.3，没事", P_EACH**1000 == 0.0 and round(1000 * math.log(P_EACH), 1) == -916.3)
+check("每个正数都能写成 e 的（它的 ln）次方：e^(−1.204) → 0.3000，e^(−0.916) → 0.400；e⁵ ÷ e² = e³（5 个 e 约掉 2 个）；e^(−1) = 1/e → 0.37",
+      round(math.exp(-1.204), 4) == 0.3000 and round(math.exp(-0.916), 3) == 0.400 and math.isclose(math.e**5 / math.e**2, math.e**3)
+      and math.isclose(math.exp(-1), 1 / math.e) and round(1 / math.e, 2) == 0.37)
+check("规则表：ln(0.12 ÷ 0.4) = −2.120 − (−0.916) = −1.204 = ln 0.3；ln(1/0.4) = ln 2.5 → 0.916；ln(0.4¹⁴) = 14 × ln 0.4；"
+      "ln √9 = ln 3 → 1.0986，½ × ln 9 = ½ × 2.1972 = 1.0986",
+      math.isclose(math.log(0.12 / 0.4), math.log(0.3)) and round(-2.120 - -0.916, 3) == -1.204 and round(math.log(0.3), 3) == -1.204
+      and math.isclose(math.log(1 / 0.4), -math.log(0.4)) and math.isclose(math.log(1 / 0.4), math.log(2.5)) and round(math.log(2.5), 3) == 0.916
+      and math.isclose(math.log(0.4**14), 14 * math.log(0.4)) and math.isclose(math.log(math.sqrt(9)), 0.5 * math.log(9))
+      and round(math.log(3), 4) == 1.0986 and round(math.log(9), 4) == 2.1972 and round(0.5 * 2.1972, 4) == 1.0986)
 check("字面值重算：14 × (−0.9163) → −12.83；1000 × (−0.9163) = −916.3",
       round(math.log(P_EACH), 4) == -0.9163 and round(14 * -0.9163, 2) == -12.83 and round(1000 * -0.9163, 1) == -916.3)
 
@@ -821,6 +896,9 @@ check("5.35e-09 就是 5.35 × 10⁻⁹ = 0.00000000535：小数点后第 9 位�
 check("关节 0 的动作离均值 1.07 个 σ，是前 4 个里最远的", round(abs(float(eps[0])), 2) == 1.07 and int(torch.argmax(eps[:4].abs())) == 0)
 check("前 4 个关节的密度都在 0.22 到 0.40 之间：单个都很普通，小的是 14 个连乘", all(0.22 < float(d) < 0.40 for d in dens[:4]))
 check("正文引用的数：关节 0 的密度 0.2248、ln p = −1.4927", round(float(dens[0]), 4) == 0.2248 and round(math.log(dens[0]), 4) == -1.4927)
+check("手算关节 0（字面值重算）：−0.6089 − 0.4623 = −1.0712；1.0712² → 1.14747；1.14747 ÷ 2 → 0.5737；exp(−0.5737) → 0.5634；0.5634 ÷ 2.5066 → 0.2248",
+      round(-0.6089 - 0.4623, 4) == -1.0712 and round(1.0712**2, 5) == 1.14747 and round(1.14747 / 2, 4) == 0.5737
+      and round(math.exp(-0.5737), 4) == 0.5634 and round(0.5634 / 2.5066, 4) == 0.2248)
 
 log_formula = -((action - mean) ** 2) / (2 * std**2) - torch.log(std) - 0.5 * math.log(2 * math.pi)
 check("一维 log 密度的三项式 −(a−μ)²/(2σ²) − ln σ − ½ ln(2π) 和 torch 逐个相同", torch.allclose(log_formula, dist.log_prob(action), atol=1e-5))
@@ -833,6 +911,9 @@ print(f"通勤那口钟（μ = 35，σ = 5）：花 35 分钟的 log 密度 {lp3
       f"密度之比 exp({lp50 - lp35:.1f}) = 1/{math.exp(lp35 - lp50):.0f}")
 check("通勤：log 密度 −2.53 和 −7.03，差 4.5，密度差约 90 倍", round(lp35, 2) == -2.53 and round(lp50, 2) == -7.03
       and round(lp35 - lp50, 2) == 4.5 and round(math.exp(lp35 - lp50)) == 90)
+check("通勤手算（字面值重算）：5 × 2.5066 = 12.533；1 ÷ 12.533 → 0.0798；ln 0.0798 → −2.53；15² ÷ (2 × 5²) = 225 ÷ 50 = 4.5；−2.53 + (−4.5) = −7.03",
+      math.isclose(5 * 2.5066, 12.533) and round(1 / 12.533, 4) == 0.0798 and round(math.log(0.0798), 2) == -2.53
+      and 15**2 / (2 * 5**2) == 225 / 50 == 4.5 and round(-2.53 + -4.5, 2) == -7.03)
 
 mean_new = mean + 0.1 * (action - mean)            # 假想更新了一小步：钟的中心朝这个动作挪了 10%
 logp_new = torch.distributions.Normal(mean_new, std).log_prob(action).sum(dim=-1).item()
@@ -846,9 +927,28 @@ check("正文引用的数：log π 从 −19.0465 变成 −17.8721，差 1.1744
       lp_old4 == -19.0465 and lp_new4 == -17.8721 and diff4 == 1.1744 and round(-17.8721 - -19.0465, 4) == 1.1744
       and round(math.exp(1.1744), 2) == 3.24 and round(math.exp(logp_new - logp_torch), 2) == 3.24)
 
+std_bell = torch.distributions.Normal(0.0, 1.0)
+lp_at1 = std_bell.log_prob(torch.tensor(1.0)).item()
+print(f"\n进阶：log 密度三项式在 σ = 1、x = 1 处：−0.5 − ln 1 − ½ ln(2π) = −0.5 − 0 − {0.5 * math.log(2 * math.pi):.4f} = {-0.5 - 0.5 * math.log(2 * math.pi):.4f}；"
+      f"torch：{lp_at1:.4f}；ln(0.241971) = {math.log(0.241971):.4f}")
+check("log 密度三项式核对（字面值）：½ × ln 6.2832 → 0.9189；−0.5 − 0.9189 = −1.4189；ln(0.241971) → −1.4189；torch 给 −1.4189",
+      round(0.5 * math.log(6.2832), 4) == 0.9189 and round(-0.5 - 0.9189, 4) == -1.4189 and round(math.log(0.241971), 4) == -1.4189
+      and round(lp_at1, 4) == -1.4189 and math.log(1) == 0)
+first_term = lambda m: -((1 - m) ** 2) / 2                              # x = 1、σ = 1 时 log 密度的第一项，m 是均值
+nudge = (first_term(0.001) - first_term(0.0)) / 0.001
+print(f"对 μ 的导数：μ 从 0 拧到 0.001，第一项 {first_term(0.0):g} → {first_term(0.001):.7f}，涨了 {first_term(0.001) - first_term(0.0):.7f}，÷ 0.001 = {nudge:.4f}（公式 (x − μ)/σ² = 1）")
+check("对 μ 的导数缩 h 核对：−(1 − 0.001)² ÷ 2 = −0.4990005，涨了 0.0009995，÷ 0.001 = 0.9995，靠近 (1 − 0)/1² = 1",
+      math.isclose(first_term(0.001), -0.4990005) and math.isclose(first_term(0.001) - first_term(0.0), 0.0009995) and round(nudge, 4) == 0.9995
+      and round(-(1 - 0.001) ** 2 / 2, 7) == -0.4990005)
+ln_slopes = [(x, (math.log(x + 0.001) - math.log(x)) / 0.001) for x in (0.5, 1, 2, 4)]
+print("ln 的导数：h = 0.001 时量到的斜率 " + "、".join(f"x = {x:g}：{s:.4f}" for x, s in ln_slopes) + "——规律是 1/x")
+check("正文表里的四个斜率：1.9980、0.9995、0.4999、0.2500（都靠近 1/x）",
+      [f"{s:.4f}" for _, s in ln_slopes] == ["1.9980", "0.9995", "0.4999", "0.2500"] and all(abs(s - 1 / x) < 0.003 / x for x, s in ln_slopes))
+check("ln(1 + t) ≈ t：第 1 章的 e^0.01 = 1.01005；Math.log(1.001) → 0.0009995；(x + h) ÷ x = 1 + h/x",
+      round(math.exp(0.01), 5) == 1.01005 and round(math.log(1.001), 7) == 0.0009995 and math.isclose((2 + 0.001) / 2, 1 + 0.001 / 2))
 h = 1e-6
 dln = (math.log(2 + h) - math.log(2)) / h
-print(f"\n进阶：ln 的导数。缩 h 量 x = 2 处的斜率：(ln 2.001 − ln 2) / 0.001 = {(math.log(2.001) - math.log(2)) / 0.001:.4f}；h = 0.000001 时 {dln:.4f} = 1/2")
+print(f"缩 h 量 x = 2 处的斜率：(ln 2.001 − ln 2) / 0.001 = {(math.log(2.001) - math.log(2)) / 0.001:.4f}；h = 0.000001 时 {dln:.4f} = 1/2")
 check("(ln x)′ = 1/x：在 x = 2 处是 0.5", abs(dln - 0.5) < 1e-5 and round((math.log(2.001) - math.log(2)) / 0.001, 4) == 0.4999)
 mu_t = mean.clone().requires_grad_(True)
 torch.distributions.Normal(mu_t, std).log_prob(action).sum().backward()
@@ -865,6 +965,9 @@ print(f"  骰子：每面 −ln(1/6) = ln 6 = {math.log(6):.3f}，熵也是 {mat
 check("公平硬币的熵 0.693（= ln 2）；偏心硬币 0.325，更好猜；骰子 1.792（= ln 6），更难猜",
       round(coin_fair, 3) == 0.693 and round(coin_biased, 3) == 0.325 and round(math.log(6), 3) == 1.792)
 check("偏心硬币手算用到的两个数：−ln 0.9 = 0.105，−ln 0.1 = 2.303", round(-math.log(0.9), 3) == 0.105 and round(-math.log(0.1), 3) == 2.303)
+check("为什么用 ln：两枚公平硬币都是正面，概率 0.5 × 0.5 = 0.25，意外程度 −ln 0.25 → 1.386 = 0.693 + 0.693（独立的意外相加）",
+      0.5 * 0.5 == 0.25 and round(-math.log(0.25), 3) == 1.386 and round(0.693 + 0.693, 3) == 1.386
+      and math.isclose(-math.log(0.25), -math.log(0.5) - math.log(0.5)))
 check("字面值重算：−ln(1/6) = −(ln 1 − ln 6) = −(0 − 1.792) = 1.792；0.5 × 0.693 + 0.5 × 0.693 = 0.693；0.9 × 0.105 + 0.1 × 2.303 → 0.325",
       round(-math.log(1 / 6), 3) == 1.792 and -(0 - 1.792) == 1.792 and round(0.5 * 0.693 + 0.5 * 0.693, 3) == 0.693
       and round(0.9 * 0.105 + 0.1 * 2.303, 3) == 0.325)
@@ -899,6 +1002,11 @@ check("正文引用的数：σ = 0.1、0.5、1、2 的熵是 −0.8836、0.7258�
       [round(r[1], 4) for r in ent_rows] == [-0.8836, 0.7258, 1.4189, 2.1121])
 check("σ 翻倍，熵加 ln 2 = 0.693（0.5 → 1 → 2）", abs(ent_rows[2][1] - ent_rows[1][1] - math.log(2)) < 1e-5
       and abs(ent_rows[3][1] - ent_rows[2][1] - math.log(2)) < 1e-5 and round(math.log(2), 3) == 0.693)
+check("折叠块的合并五步：½ = ½ ln e；ln σ = ½ ln σ²；½(ln e + ln σ² + ln 2π) = ½ ln(2πeσ²) = ln(√(2πe) σ)；2πe → 17.079，√17.079 → 4.1327；σ = 1 时 0.5 + 0.9189 = 1.4189",
+      all(math.isclose(0.5 + math.log(s) + 0.5 * math.log(2 * math.pi), 0.5 * (math.log(math.e) + math.log(s**2) + math.log(2 * math.pi)))
+          and math.isclose(0.5 * math.log(2 * math.pi * math.e * s**2), math.log(math.sqrt(2 * math.pi * math.e) * s)) for s in SIGMAS)
+      and math.isclose(math.log(0.5**2), 2 * math.log(0.5)) and round(2 * math.pi * math.e, 3) == 17.079 and round(math.sqrt(17.079), 4) == 4.1327
+      and round(0.5 + 0.9189, 4) == 1.4189)
 sigma_zero_entropy = 1 / EQUIV_WIDTH
 check("σ = 0.1 的钟相当于宽度 0.41（比 1 小，所以熵为负）；exp(1.4189) = 4.13", round(ent_rows[0][2], 2) == 0.41 and round(math.exp(1.4189), 2) == 4.13)
 check("通勤（按分钟算）：天天准点 σ = 1，熵 ln 4.13 → 1.42；很随缘 σ = 10，熵 ln 41.3 → 3.72；相差 ln 10 → 2.30",

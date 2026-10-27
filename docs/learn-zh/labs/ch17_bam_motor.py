@@ -62,6 +62,10 @@ check("目标角 = 0.35 + 0.10 − 0.01 = 0.44 rad ≈ 25.2°", round(target, 2)
 check("字面值重算：0.35 + 0.1 − 0.01 = 0.44", round(0.35 + 0.1 - 0.01, 2) == 0.44)
 check("真机读数推到 0.45、真实角 0.44；仿真直接给 0.44——两边真实角一样", round(reading, 2) == 0.45 and round(reading - BIAS_J, 2) == round(target, 2))
 check("自测：HOME −0.46、动作 +0.06、偏置 −0.01 → −0.46 + 0.06 − (−0.01) = −0.39", round(-0.46 + 0.06 - (-0.01), 2) == -0.39)
+check("弧度换度乘 57.3：0.3491 × 57.3 ≈ 20.0°，0.44 × 57.3 ≈ 25.2°，0.1 × 57.3 ≈ 5.7°",
+      round(0.3491 * 57.3, 1) == 20.0 and round(0.44 * 57.3, 1) == 25.2 and round(0.1 * 57.3, 1) == 5.7 and round(home["neck_pitch"], 4) == 0.3491)
+check("± / ∓：左右腿五对关节的站姿都互为相反数（镜像装的）",
+      all(math.isclose(home[f"left_{j}"], -home[f"right_{j}"], abs_tol=1e-9) for j in ("hip_yaw", "hip_roll", "hip_pitch", "knee", "ankle")))
 
 # ---------------------------------------------------------------------------
 banner("1b. 画图：figures/ch17_action_target.png（数轴上加站姿、加动作、减偏置）")
@@ -121,6 +125,17 @@ check("1 rad ≈ 651.9 格编码器读数", round(4096 / (2 * math.pi), 1) == 65
 KP_FW = 200.0  # TWEAK-1: 400.0
 print(f"固件 P 增益：项目 kp_fw = {C.actuators.kp_fw:g}；bam 给 XL330 的默认值 = {xl.kp:g}")
 check("kp_fw = 200（bam 里 XL330 的默认值是 400）", C.actuators.kp_fw == 200.0 and xl.kp == 400)
+check("常数文件的注释：200 是保留下来的固件刚度（microduck's preserved firmware stiffness）",
+      "kp_fw=200.0,  # microduck's preserved firmware stiffness" in Path(C.__file__).read_text(encoding="utf-8"))
+TESTBENCH = Path(C.__file__).resolve().parents[3] / "scripts" / "testbench_sim2real.py"
+if TESTBENCH.is_file():
+    check("真舵机对比实验把增益写成 200，和仿真一致（scripts/testbench_sim2real.py）",
+          lines_in_order(TESTBENCH.read_text(encoding="utf-8"),
+                         ["# Match the firmware gain used in sim (BAM kp_fw=200).", "ctrl.write_position_p_gain(motor_id, kp)",
+                          'ap.add_argument("--kp", type=int, default=200, help="XL330 position P gain")']))
+else:
+    print("  （没找到 scripts/testbench_sim2real.py，跳过）")
+check("k_e 取三位有效数字：0.0028774 → 0.00288；一圈 2π ≈ 6.2832 rad", float(f"{KE:.3g}") == 0.00288 and round(2 * math.pi, 4) == 6.2832)
 VIN = 7.5                                                 # 名义电压（bam 里 XL330 的默认值），手算都用它
 check("bam 里 XL330 的名义电压 7.5 V", xl.vin == VIN)
 ERR = 0.44 - 0.40                                         # 17.1 的目标角 0.44，此刻关节在 0.40
@@ -130,6 +145,13 @@ print(f"手算：误差 {ERR:.2f} rad；占空比 = {ERR:.2f} × {KP_FW:g} × 0.
 check("占空比 = 0.04 × 200 × 0.00288 = 0.02304（2.304%）", round(duty_hand, 5) == 0.02304)
 check("电压 = 7.5 × 0.02304 = 0.1728 V（第 14–18 章手算复核里的同一个数）", round(v_hand, 4) == 0.1728)
 check("字面值重算：0.04 × 200 × 0.00288 × 7.5 = 0.1728", round(0.04 * 200 * 0.00288 * 7.5, 4) == 0.1728)
+check("从左往右乘：0.04 × 200 = 8，8 × 0.00288 = 0.02304；0.04 rad ≈ 0.04 × 57.3 ≈ 2.3°",
+      round(0.04 * 200, 6) == 8 and round(8 * 0.00288, 5) == 0.02304 and round(0.04 * 57.3, 1) == 2.3)
+check("比例：差 0.08 rad → 0.08 × 200 × 0.00288 = 0.04608，正好是 0.02304 的 2 倍",
+      round(0.08 * 200 * 0.00288, 5) == 0.04608 and math.isclose(0.04608, 2 * 0.02304))
+check("开 3 成：按时间占的比例加权平均 7.5 × 0.3 + 0 × 0.7 = 2.25 V", round(7.5 * 0.3 + 0 * 0.7, 2) == 2.25)
+check("clip：差 2 rad 算出 2 × 200 × 0.00288 = 1.152，按 1 算（JS 的 Math.min(Math.max(…)) 同样得 1）；差 −2 rad 按成 −1",
+      round(2 * 200 * 0.00288, 3) == 1.152 and np.clip(1.152, -1, 1) == 1 and min(max(1.152, -1), 1) == 1 and np.clip(-1.152, -1, 1) == -1)
 xl.kp, xl.vin = KP_FW, VIN
 v_bam = float(xl.compute_control(0.44, 0.40, 0.0, 0.005))
 print(f"bam 自己的 compute_control（k_e 不取整）：{v_bam:.5f} V")
@@ -149,11 +171,18 @@ for deg in (1, 5, 20):
 table(["误差 (°)", "占空比", "电压 (V)", "舵机模型算的 (V)"], rows)
 check("误差 1°、5°、20° → 电压 0.0753、0.3766、1.5066 V；舵机模型的代码算的一样（这么小的误差碰不到任何上限）",
       [r[2] for r in rows] == ["0.0753", "0.3766", "1.5066"] and all(r[2] == r[3] for r in rows))
+check("手算第一行：1 ÷ 57.3 ≈ 0.01745 rad；0.01745 × 200 × 0.0028774 ≈ 0.01004（表里印 0.0100）；7.5 × 0.01004 = 0.0753",
+      round(1 / 57.3, 5) == 0.01745 and round(0.01745 * 200 * 0.0028774, 5) == 0.01004 and round(7.5 * 0.01004, 4) == 0.0753
+      and rows[0][1] == "0.0100" and rows[0][2] == "0.0753")
+check("只看占空比这一道限制：差 2 rad 时电压给满电池的 7.5 V", firmware_voltage(2.0) == VIN)
 FULL_DEG = 1 / (KP_FW * KE) * DEG
 print(f"占空比到 1（电池电压全给上）要差 1 / (kp × k_e) = {1 / (KP_FW * KE):.4f} rad = {FULL_DEG:.1f}°")
 check("误差 1 / (200 × 0.0028774) = 1.738 rad ≈ 99.6° 占空比才到 1", round(FULL_DEG, 1) == 99.6 and round(1 / (200 * 0.0028774), 3) == 1.738)
+check("一步一步：200 × 0.0028774 = 0.57548；1 ÷ 0.57548 ≈ 1.738 rad；1.738 × 57.3 ≈ 99.6°",
+      round(200 * 0.0028774, 5) == 0.57548 and round(1 / 0.57548, 3) == 1.738 and round(1.738 * 57.3, 1) == 99.6)
 check("进阶：0.04 × 651.9 ≈ 26.08 格；26.08 × 200 ÷ 256 = 20.375；20.375 ÷ 885 ≈ 0.02302",
       round(0.04 * 651.9, 2) == 26.08 and 26.08 * 200 / 256 == 20.375 and round(20.375 / 885, 5) == 0.02302)
+check("进阶：4096 ÷ 6.2832 ≈ 651.9 格；12 ÷ 3 = 4（分蛋糕）", round(4096 / 6.2832, 1) == 651.9 and 12 / 3 == 4)
 check("图 ①：开 3 成平均 7.5 × 0.3 = 2.25 V，开 6 成平均 4.5 V", round(7.5 * 0.3, 2) == 2.25 and round(7.5 * 0.6, 2) == 4.5)
 check("自测（17.2）：目标 0.44、此刻 0.54 → 误差 −0.1 rad；电池 8.0 V → 占空比 −0.0576、电压 −0.4608 V", round(0.44 - 0.54, 2) == -0.1 and
       round(-0.1 * 200 * 0.00288, 4) == -0.0576 and round(-0.1 * 200 * 0.00288 * 8.0, 4) == -0.4608)
@@ -211,6 +240,8 @@ i_rest = 0.1728 / r
 tau_rest = kt * round(i_rest, 6)
 print(f"静止：电流 = 0.1728 ÷ 2.81 = {i_rest:.6f} A；力矩 = 0.366 × {i_rest:.6f} = {tau_rest:.6f} N·m")
 check("静止时：电流 0.061495 A，力矩 0.022507 N·m", round(i_rest, 6) == 0.061495 and round(tau_rest, 6) == 0.022507)
+check("单位的手感：100 克的苹果重约 0.1 × 9.8 = 0.98 N；通 2 A 出 0.366 × 2 = 0.732 N·m（电流翻倍，力矩翻倍）",
+      round(0.1 * 9.8, 2) == 0.98 and round(0.366 * 2, 3) == 0.732)
 emf = kt * 0.2
 net = 0.1728 - emf
 i_move = net / r
@@ -222,10 +253,19 @@ check("反电动势 0.0732 V、净电压 0.0996 V、电流 0.035445 A、力矩 0
 two_terms = 0.366 * 0.1728 / 2.81 - 0.366 ** 2 * 0.2 / 2.81
 print(f"拆开写：0.366 × 0.1728 / 2.81 − 0.366² × 0.2 / 2.81 = {0.366 * 0.1728 / 2.81:.6f} − {0.366 ** 2 * 0.2 / 2.81:.6f} = {two_terms:.6f}")
 check("转着比不转少了四成多：1 − 0.012973 ÷ 0.022507 ≈ 0.42", round(1 - 0.012973 / 0.022507, 2) == 0.42)
+check("0.012973 ÷ 0.022507 ≈ 0.576：只剩约 58%，少了约 42%；0.2 rad/s ≈ 0.2 × 57.3 ≈ 11.5°/秒",
+      round(0.012973 / 0.022507, 3) == 0.576 and round(0.576 * 100) == 58 and round(100 - 58) == 42 and round(0.2 * 57.3, 1) == 11.5)
 check("两项相减：0.022507 − 0.009534 = 0.012973（手算复核里的 0.012972811）",
       round(0.366 ** 2 * 0.2 / 2.81, 6) == 0.009534 and round(two_terms, 9) == 0.012972811 and round(0.022507 - 0.009534, 6) == 0.012973)
 check("字面值重算：0.1728 − 0.0732 = 0.0996；0.366 × 0.035445 = 0.012973", round(0.1728 - 0.0732, 4) == 0.0996
       and round(0.366 * 0.035445, 6) == 0.012973)
+check("展开一步一步：0.0732 ÷ 2.81 ≈ 0.026050；0.061495 − 0.026050 = 0.035445；0.366 × 0.026050 ≈ 0.009534；0.366 × 0.0732 = 0.366² × 0.2",
+      round(0.0732 / 2.81, 6) == 0.02605 and round(0.061495 - 0.026050, 6) == 0.035445 and round(0.366 * 0.026050, 6) == 0.009534
+      and math.isclose(0.366 * 0.0732, 0.366 ** 2 * 0.2))
+check("进阶的功率核对：反电动势 × 电流 = 0.0732 × 0.035445 ≈ 0.002595；力矩 × 转速 = 0.012973 × 0.2 ≈ 0.002595",
+      round(0.0732 * 0.035445, 6) == 0.002595 and round(0.012973 * 0.2, 6) == 0.002595 and math.isclose(emf * i_move, kt * i_move * 0.2))
+check("功率相等对拟合的精确参数也成立：k_t 既是 N·m/A 又是 V/(rad/s)，(k_t × 转速) × 电流 = (k_t × 电流) × 转速",
+      math.isclose((KT * 0.2) * ((0.1728 - KT * 0.2) / R), (KT * (0.1728 - KT * 0.2) / R) * 0.2))
 
 MAX_CURRENT = 1.75  # TWEAK-2: 3.5
 xl.max_current = MAX_CURRENT
@@ -251,6 +291,15 @@ check("公式的堵转力矩 0.977 N·m、空载最高转速 20.49 rad/s；转�
       and round(no_load, 2) == 20.49 and round(0.366 ** 2 / 2.81, 4) == 0.0477 and round(KT ** 2 / R, 4) == 0.0477)
 check("电流上限 1.75 A → 力矩封顶 0.6405 N·m；静止时电压最多约 4.92 V；拐点约 7.05 rad/s",
       round(cap, 4) == 0.6405 and round(v_cap, 2) == 4.92 and round(knee, 2) == 7.05)
+check("两头：0.366² = 0.133956，0.133956 ÷ 2.81 ≈ 0.0477；空载 7.5 ÷ 0.366 ≈ 20.49 rad/s，约每秒 20.49 ÷ 6.2832 ≈ 3.3 圈",
+      round(0.366 ** 2, 6) == 0.133956 and round(0.133956 / 2.81, 4) == 0.0477 and round(7.5 / 0.366, 2) == 20.49 and round(20.49 / 6.2832, 1) == 3.3)
+check("中间那条直线：0.977 − 0.0477 × 10 = 0.977 − 0.477 = 0.500（和自测的 10 rad/s 对上）",
+      round(0.0477 * 10, 3) == 0.477 and round(0.977 - 0.477, 3) == 0.5)
+check("满电压不转时电流 7.5 ÷ 2.81 ≈ 2.67 A，超过 1.75 A；欧姆定律倒过来：1.75 × 2.81 = 4.9175（类比 12 ÷ 4 = 3、3 × 4 = 12）",
+      round(7.5 / 2.81, 2) == 2.67 and 7.5 / 2.81 > 1.75 and round(1.75 * 2.81, 4) == 4.9175 and 12 / 4 == 3 and 3 * 4 == 12)
+check("拐点一步一步：7.5 − 4.92 = 2.58，2.58 ÷ 0.366 ≈ 7.05 rad/s", round(7.5 - 4.92, 2) == 2.58 and round(2.58 / 0.366, 2) == 7.05)
+check("0.64 N·m 有多大：在 0.1 m 的力臂上顶得住 0.64 ÷ 0.1 = 6.4 N，约 6.4 ÷ 9.8 ≈ 0.65 kg（按精确的 0.6405 也是 0.65）",
+      round(0.64 / 0.1, 1) == 6.4 and round(6.4 / 9.8, 2) == 0.65 and round(KT * 1.75 / 0.1 / 9.8, 2) == 0.65)
 v_big = float(xl.compute_control(math.radians(120), 0.0, 0.0, 0.005))
 tau_big = float(xl.compute_torque(v_big, True, 0.0, 0.0))
 print(f"bam：误差 120°、静止 → 电压 {v_big:.4f} V（电池 {VIN:g} V），力矩 {tau_big:.4f} N·m（公式值 {KT * VIN / R:.4f}）")
@@ -277,6 +326,8 @@ rows = [[f"{s:g}", f"{KT * VIN / R - KT ** 2 * s / R:.4f}", f"{bam_max_torque(s)
 table(["转速 (rad/s)", "只按公式 (N·m)", "舵机模型：加上电流上限 (N·m)"], rows)
 check("转速 0、5 时 bam 封顶 0.6405；10、15 时两列相同（0.4999、0.2617）；20.49 时降到 0",
       rows[0][2] == rows[1][2] == "0.6405" and rows[2][1] == rows[2][2] == "0.4999" and rows[3][2] == "0.2617" and rows[4][2] == "0.0000")
+check(f"第三列 = 公式值和 k_t × {MAX_CURRENT:g} 取小的（高出电流上限的被削平）",
+      all(r[2] == f"{min(KT * VIN / R - KT ** 2 * float(r[0]) / R, KT * MAX_CURRENT):.4f}" for r in rows))
 check("自测：满电压、10 rad/s → 净电压 3.84 V、电流 1.3665 A（没到上限）、力矩约 0.500 N·m",
       round(7.5 - 0.366 * 10, 2) == 3.84 and round(3.84 / 2.81, 4) == 1.3665 and round(0.366 * 1.3665, 3) == 0.500)
 
@@ -385,6 +436,10 @@ def friction_budget(tau_motor, speed, scale=1.0):
 
 print("低速额外那一份的开关：" + "，".join(f"{v:g} rad/s → {stribeck(v):.3f}" for v in (1, 2, 3.5)))
 check("低速额外那一份：2 rad/s 时还有 96%，3.5 rad/s 时几乎为 0", round(stribeck(2), 2) == 0.96 and stribeck(3.5) < 0.01)
+check("开关的式子 exp(−(转速 ÷ 2.89)^8.68)：m6 里的 2.89、8.68；控制台算 2 rad/s 得 0.96、3.5 rad/s 得 0.005",
+      round(DTHETA, 2) == 2.89 and round(ALPHA_S, 2) == 8.68 and round(math.exp(-((2 / 2.89) ** 8.68)), 2) == 0.96
+      and round(math.exp(-((3.5 / 2.89) ** 8.68)), 3) == 0.005 and round(stribeck(3.5), 3) == 0.005)
+check("比 1 小的数，次方越高越小：0.5² = 0.25，0.5³ = 0.125", 0.5 ** 2 == 0.25 and 0.5 ** 3 == 0.125)
 fb_hand = 0.00477 + 0.00468 + 0.267 * 0.1
 print(f"手算：电机出 0.1 N·m、几乎不转：0.00477 + 0.00468 + 0.267 × 0.1 = {fb_hand:.5f} ≈ {fb_hand:.3f} N·m；bam 的式子：{friction_budget(0.1, 0.0):.6f}")
 check("摩擦预算 ≈ 0.00945 + 0.0267 = 0.03615 ≈ 0.036 N·m（bam 的式子 0.0361）；电机的 0.1 被吃掉三成多", round(0.03615 / 0.1, 2) == 0.36
@@ -395,10 +450,22 @@ print(f"摩擦倍率 friction_scale 每回合在 {FRIC_RANGE} 里抽：预算 ×
 check("friction_scale 每回合抽 U(0.9, 1.1)", FRIC_RANGE == (0.9, 1.1) and cfg.events["randomize_joint_friction"].mode == "reset")
 src_fdr = inspect.getsource(importlib.import_module("mjlab_microduck.actuator.friction_dr_bam"))
 check("倍率乘在 bam 的摩擦预算上：base * fs", "return base if fs is None else base * fs" in src_fdr)
+check("预算是摩擦能挡住的上限：电机出 0.1，剩 0.1 − 0.036 = 0.064 去转动；被吃掉 0.036 ÷ 0.1 = 0.36",
+      round(0.1 - 0.036, 3) == 0.064 and round(0.036 / 0.1, 2) == 0.36 and friction_budget(0.1, 0.0) < 0.1)
+check("电机只出 0.01：预算 0.00945 + 0.267 × 0.01 = 0.00945 + 0.00267 = 0.01212，比 0.01 大，推不动（bam 的式子也是 0.0121）",
+      round(0.267 * 0.01, 5) == 0.00267 and round(0.00945 + 0.00267, 5) == 0.01212 and friction_budget(0.01, 0.0) > 0.01
+      and round(friction_budget(0.01, 0.0), 4) == 0.0121)
+check("倍率 0.9–1.1：0.036 的预算在 0.036 × 0.9 = 0.0324 到 0.036 × 1.1 = 0.0396 之间",
+      round(0.036 * 0.9, 4) == 0.0324 and round(0.036 * 1.1, 4) == 0.0396)
+check("摩擦倍率是均匀地抽：randomize_bam_friction 用 torch.rand × (hi − lo) + lo",
+      "samples = torch.rand(len(env_ids), 1, device=env.device) * (hi - lo) + lo"
+      in inspect.getsource(importlib.import_module("mjlab_microduck.tasks.mdp").randomize_bam_friction))
 v_low, v_high = 0.02304 * 6.5, 0.02304 * 8.2
 print(f"同样差 0.04 rad：电池 6.5 V → {v_low:.5f} V；8.2 V → {v_high:.6f} V；8.2 ÷ 6.5 = {8.2 / 6.5:.2f}")
 check("同一个误差：6.5 V 给 0.14976 V，8.2 V 给 0.188928 V，差 1.26 倍", round(v_low, 5) == 0.14976
       and round(v_high, 6) == 0.188928 and round(8.2 / 6.5, 2) == 1.26)
+check("相除时 0.02304 约掉：0.188928 ÷ 0.14976 ≈ 1.26，正好是 8.2 ÷ 6.5", round(0.188928 / 0.14976, 2) == 1.26
+      and math.isclose(v_high / v_low, 8.2 / 6.5))
 print(f"电池：vin_range = {C.actuators.vin_range}，压降增益 = {C.actuators.vin_drop_gain_range} V/(N·m)，地板 vin_min = {C.actuators.vin_min} V")
 check("电池 U(6.5, 8.2)、压降增益 U(0, 0.2)、最低 6.0 V", C.actuators.vin_range == (6.5, 8.2)
       and C.actuators.vin_drop_gain_range == (0.0, 0.2) and C.actuators.vin_min == 6.0)
@@ -412,6 +479,13 @@ def sagged(vin, gain, load):
 print(f"压降：7.0 − 0.15 × 2.0 = {sagged(7.0, 0.15, 2.0):.1f} V；6.5 − 0.15 × 4.0 = {6.5 - 0.15 * 4.0:.1f} → 地板 {sagged(6.5, 0.15, 4.0):.1f} V")
 check("压降手算：7.0 − 0.15 × 2.0 = 6.7 V；6.5 − 0.15 × 4.0 = 5.9 V 低于地板，按 6.0 V 算", round(sagged(7.0, 0.15, 2.0), 1) == 6.7
       and round(6.5 - 0.15 * 4.0, 1) == 5.9 and sagged(6.5, 0.15, 4.0) == 6.0)
+check("先乘后减：0.15 × 2.0 = 0.3，7.0 − 0.3 = 6.7；0.15 × 4.0 = 0.6，6.5 − 0.6 = 5.9",
+      round(0.15 * 2.0, 2) == 0.3 and round(7.0 - 0.3, 1) == 6.7 and round(0.15 * 4.0, 2) == 0.6 and round(6.5 - 0.6, 1) == 5.9)
+check("bam 的说明：压降来自电池 + 电线的电阻；只看力矩大小（abs）；有效电压只夹下边（clamp(min=vin_min)）",
+      "battery + cable resistance" in mjlab_bam and "load = self._prev_motor_torque.abs().sum(dim=-1, keepdim=True)" in mjlab_bam
+      and "vin = torch.clamp(vin, min=self.cfg.vin_min)" in mjlab_bam)
+check("电池电压和压降增益都是均匀地抽（bam 里的 uniform_）",
+      ".uniform_(*self.cfg.vin_range)" in mjlab_bam and ".uniform_(*self.cfg.vin_drop_gain_range)" in mjlab_bam)
 check("自测（17.4）：差 0.05 rad → 占空比 0.0288；6.5 V 给 0.1872 V，8.2 V 给 0.23616 V",
       round(0.05 * 200 * 0.00288, 4) == 0.0288 and round(0.0288 * 6.5, 4) == 0.1872 and round(0.0288 * 8.2, 5) == 0.23616)
 check("电池电压和压降增益开机抽一次、reset 不重抽；压降用的是上一个物理步的力矩",
@@ -456,6 +530,10 @@ print("每步重抽 10 万次，3/4/5/6 各占：" + "、".join(f"{s:.3f}" for s
 check("自测（17.5）：执行器 2–8 步 = 10–40 ms；观测的 8 步 = 160 ms", 2 * 5 == 10 and 8 * 5 == 40 and 8 * 20 == 160)
 check("3、4、5、6 四个数一样可能（各约 25%），平均约 4.5 步 ≈ 22.5 ms",
       all(abs(s - 0.25) < 0.01 for s in share) and abs(float(lags.float().mean()) - 4.5) < 0.02 and 4.5 * 5 == 22.5)
+check("平均手算：(3 + 4 + 5 + 6) ÷ 4 = 18 ÷ 4 = 4.5 步；一个环境步 20 ms、一个物理步 5 ms（秒换毫秒乘 1000）",
+      (3 + 4 + 5 + 6) == 18 and 18 / 4 == 4.5 and math.isclose(ENV_DT * 1000, 20) and math.isclose(PHYS * 1000, 5))
+check("mjlab 的延迟缓冲也是这样抽：torch.randint(最少, 最多 + 1)，3、4、5、6 这几个整数一样可能",
+      lines_in_order(inspect.getsource(DelayBuffer._sample_lags), ["candidate_lags = torch.randint(", "self.min_lag,", "self.max_lag + 1,"]))
 
 # ---------------------------------------------------------------------------
 banner("5b. 画图：figures/ch17_delay_clocks.png（两只钟：物理步 5 ms，环境步 20 ms）")
@@ -562,6 +640,28 @@ check(f"延迟 {DELAY_STEPS} 步：整条曲线原样往后挪 {DELAY_STEPS} 步
       np.all(lagged[:DELAY_STEPS] == 0) and np.allclose(lagged[DELAY_STEPS:], ideal[:STEPS - DELAY_STEPS]))
 check("延迟 6 步 = 30 ms：到 18° 从 0.160 s 变成 0.190 s", round(first_time(lagged, 18.0), 3) == 0.19)
 check("6.5 V 比 7.5 V 晚 0.185 − 0.160 = 0.025 s 到 18°", round(first_time(low, 18.0) - first_time(ideal, 18.0), 3) == 0.025)
+check("字面值：0.185 − 0.160 = 0.025；6 × 5 = 30 ms，0.160 + 0.030 = 0.190；6.5 ÷ 7.5 ≈ 0.87；18 = 20 × 0.9；20° ≈ 20 ÷ 57.3 ≈ 0.349 rad",
+      round(0.185 - 0.160, 3) == 0.025 and 6 * 5 == 30 and round(0.160 + 0.030, 3) == 0.19 and round(6.5 / 7.5, 2) == 0.87
+      and round(20 * 0.9, 1) == 18 and round(20 / 57.3, 3) == 0.349)
+check("转动惯量：转子折算 0.0018 + 负载 0.0005 ≈ 0.0023 kg·m²",
+      round(xl.get_extra_inertia(), 4) == 0.0018 and round(INERTIA, 4) == 0.0023 and round(0.0018 + 0.0005, 4) == 0.0023)
+check("粗算一个环境步：0.366 × 1.5066 ÷ 2.81 ≈ 0.196；0.196 ÷ 0.0023 ≈ 85；85 × 0.005 = 0.425；"
+      "(0.425 + 0.85 + 1.275 + 1.7) × 0.005 = 4.25 × 0.005 = 0.02125 rad ≈ 1.22°",
+      round(0.366 * 1.5066 / 2.81, 3) == 0.196 and round(0.196 / 0.0023) == 85 and round(85 * 0.005, 3) == 0.425
+      and [round(0.425 * k, 3) for k in (1, 2, 3, 4)] == [0.425, 0.85, 1.275, 1.7] and round(0.425 + 0.85 + 1.275 + 1.7, 3) == 4.25
+      and round(4.25 * 0.005, 5) == 0.02125 and round(0.02125 * 57.3, 2) == 1.22)
+xl.vin = VIN
+tau0 = float(xl.compute_torque(float(xl.compute_control(TARGET, 0.0, 0.0, PHYS)), True, 0.0, 0.0))
+q4_const = tau0 / INERTIA * PHYS ** 2 * (1 + 2 + 3 + 4) * DEG   # 力矩一直按起步时的算，4 个物理步走过的角度
+print(f"起步力矩（舵机模型）{tau0:.4f} N·m；力矩不变时 4 步走 {q4_const:.2f}°，模拟（有反电动势、误差在变小）走 {ideal[3]:.2f}°")
+check("用精确参数粗算（力矩一直按起步时的 0.196 N·m 算）也约 1.22°", round(q4_const, 2) == 1.22 and round(tau0, 3) == 0.196)
+check(f"模拟走得比粗算少（{ideal[3]:.2f}° < {q4_const:.2f}°）：关节一转，反电动势就扣掉一截力矩", ideal[3] < q4_const)
+check("紫线停下处核对：4.32 × 0.366 ÷ 2.81 ≈ 0.563；0.7 ÷ 57.3 ≈ 0.0122 rad；0.0122 × 0.563 ≈ 0.0069；"
+      "0.00945 + 0.267 × 0.0069 ≈ 0.0113，推力比预算小",
+      round(4.32 * 0.366 / 2.81, 3) == 0.563 and round(0.7 / 57.3, 4) == 0.0122 and round(0.0122 * 0.563, 4) == 0.0069
+      and round(0.00945 + 0.267 * 0.0069, 4) == 0.0113 and 0.0069 < 0.0113)
+check("折叠：1 − 0.267 = 0.733；打七三折 100 − 0.267 × 100 = 100 × 0.733 = 73.3",
+      round(1 - 0.267, 3) == 0.733 and round(100 - 0.267 * 100, 1) == 73.3 and round(100 * 0.733, 1) == 73.3)
 check("进阶手算：0.00945 ÷ 0.733 ≈ 0.0129；200 × 0.00288 × 7.5 × 0.366 ÷ 2.81 ≈ 0.563；0.0129 ÷ 0.563 ≈ 0.0229 rad ≈ 1.31°",
       round(0.00945 / 0.733, 4) == 0.0129 and round(200 * 0.00288 * 7.5, 2) == 4.32 and round(4.32 * 0.366 / 2.81, 3) == 0.563
       and round(200 * 0.00288 * 7.5 * 0.366 / 2.81, 3) == 0.563
@@ -571,6 +671,9 @@ print(f"摩擦：静止时推力 ≤ 预算的误差范围 ≈ {dead:.2f}°（�
 check("m6 摩擦：更慢（0.1 s 时 9.3°，0.220 s 才到 18°），停在 19.3°——差 0.7°，在推不动的范围（约 1.31°）以内",
       round(fric[19], 1) == 9.3 and round(first_time(fric, 18.0), 3) == 0.22 and round(fric[-1], 1) == 19.3
       and 0 < 20 - fric[-1] <= round(dead, 2) and round(dead, 2) == 1.31)
+tau_end = float(xl.compute_torque(float(xl.compute_control(TARGET, math.radians(fric[-1]), 0.0, PHYS)), True, 0.0, 0.0))
+print(f"紫线停在 {fric[-1]:.2f}°：舵机模型的推力 {tau_end:.4f} N·m，摩擦预算 {friction_budget(tau_end, 0.0):.4f} N·m")
+check("紫线最后停着的地方：舵机模型算出的推力确实不超过摩擦预算，所以停住", abs(tau_end) <= friction_budget(tau_end, 0.0))
 check("自测：电池 8.2 V 更硬——到 18° 更早、冲得更高", first_time(step_response(vin=8.2), 18.0) <= first_time(ideal, 18.0)
       and step_response(vin=8.2).max() > ideal.max())
 
@@ -662,6 +765,34 @@ fleet_v = rng.uniform(*C.actuators.vin_range, 4096)
 print(f"教学模拟：4096 只各抽一块电池，平均 {fleet_v.mean():.3f} V，最低 {fleet_v.min():.3f}，最高 {fleet_v.max():.3f}")
 check("4096 只的平均离 7.35 不到 0.02 V（第 4 章 4.5 节：抽得越多，平均越贴近期望）", abs(fleet_v.mean() - 7.35) < 0.02)
 check("这次模拟：平均 7.34 V；每 0.1 V 一格，平均每格 4096 ÷ 17 ≈ 241 只", round(fleet_v.mean(), 2) == 7.34 and round(4096 / 17) == 241)
+check("σ/√n：σ = 1.7 ÷ √12 ≈ 0.49 V，√4096 = 64（64 × 64 = 4096），0.49 ÷ 64 ≈ 0.0077 V；这次的平均离 7.35 不到它的 2 倍",
+      round((8.2 - 6.5) / math.sqrt(12), 2) == 0.49 and math.isqrt(4096) == 64 and 64 * 64 == 4096 and round(0.49 / 64, 4) == 0.0077
+      and abs(fleet_v.mean() - 7.35) < 2 * 0.49 / 64)
+check("直方图 6.5 到 8.2 每 0.1 V 一格：1.7 ÷ 0.1 = 17 格；编码器偏置 0.015 × 57.3 ≈ 0.86°", round(1.7 / 0.1) == 17 and round(0.015 * 57.3, 2) == 0.86)
+check("脚底摩擦系数：0.7 → 压 10 份挡 10 × 0.7 = 7 份；1.3 → 13 份；推一把 0.3 m/s = 每秒 30 厘米",
+      round(10 * 0.7, 6) == 7 and round(10 * 1.3, 6) == 13 and round(0.3 * 100) == 30)
+UNIFORM_EVENTS = ("foot_friction", "randomize_mass_inertia", "randomize_com", "randomize_head_com", "randomize_armature")
+check("总表的范围都是均匀地抽：这几项用 mjlab 的 dr 函数、默认 distribution = uniform、配置没改它",
+      all(inspect.signature(EV[n].func).parameters["distribution"].default == "uniform" and "distribution" not in EV[n].params
+          for n in UNIFORM_EVENTS))
+import mjlab.managers.event_manager as mj_event_manager  # noqa: E402
+
+check("推一把的速度和间隔也是均匀地抽（sample_uniform；间隔 torch.rand × (上限 − 下限) + 下限）；IMU 装歪的角度 0–6° 均匀地抽",
+      "sample_uniform(" in inspect.getsource(EV["push_robot"].func)
+      and "torch.rand(num_envs, device=self.device) * (upper - lower) + lower" in inspect.getsource(mj_event_manager)
+      and "angle = torch.rand(n, device=env.device) * max_angle_rad" in inspect.getsource(microduck_mdp._imu_misalignment_quat))
+check("躯干质量那一行：均匀地抽的是指数 α，倍数 e^(2α) 落在 0.95–1.05（mjlab 的 pseudo_inertia：质量和惯量一起乘 e^(2α)）",
+      EV["randomize_mass_inertia"].func.__name__ == "pseudo_inertia" and round(mass_lo, 6) == 0.95 and round(mass_hi, 6) == 1.05
+      and "mass and inertia scale by" in inspect.getsource(EV["randomize_mass_inertia"].func))
+mult = np.exp(2 * np.random.default_rng(17).uniform(*alpha, 200_000))   # 照配置的抽法抽 20 万次倍数
+mean_exact = (mass_hi - mass_lo) / (2 * (alpha[1] - alpha[0]))          # e^(2α) 在 α 均匀时的期望（积分给的式子，这里只做核对）
+below_exact = -alpha[0] / (alpha[1] - alpha[0])                          # 倍数 < 1 ⇔ α < 0：α 均匀，所以就是 0 左边那一段占的比例
+print(f"躯干质量倍数：精确的平均 {mean_exact:.4f}、比 1 小的占 {below_exact:.4f}；抽 20 万次：平均 {mult.mean():.4f}、比 1 小的占 {float((mult < 1).mean()):.3f}；"
+      f"直接在 {mass_lo:.2f}–{mass_hi:.2f} 均匀地抽：平均 {(mass_lo + mass_hi) / 2:.4f}，比 1 小的占 0.5")
+check("和直接均匀地抽几乎一样：平均倍数 0.999 对 1.000，比 1 小的 51% 对 50%",
+      round(mean_exact, 3) == 0.999 and round(below_exact, 2) == 0.51 and round((mass_lo + mass_hi) / 2, 3) == 1.0)
+check("抽 20 万次核对：平均倍数和比 1 小的比例都贴着精确值",
+      abs(mult.mean() - mean_exact) < 1e-3 and abs(float((mult < 1).mean()) - below_exact) < 0.01)
 check("每回合开局还随机摆放位置和朝向（reset_base：前后左右 ±0.5 m、朝向 ±3.14 rad）", EV["reset_base"].mode == "reset"
       and EV["reset_base"].params["pose_range"]["x"] == (-0.5, 0.5) and EV["reset_base"].params["pose_range"]["yaw"] == (-3.14, 3.14))
 ROW_NAMES = ["电池电压 (V)", "脚底摩擦", "摩擦倍率", "躯干质心 (mm)"]
@@ -723,6 +854,30 @@ mix = 0.9 * 10 + 0.1 * (-20)
 print(f"九成的身体回报 10、一成回报 −20：平均 0.9 × 10 + 0.1 × (−20) = 9 − 2 = {mix:g}")
 check("混合回报 = 0.9 × 10 + 0.1 × (−20) = 7（手算复核里的同一个数）", mix == 7)
 check("自测：0.5 × 12 + 0.5 × 2 = 7——平均一样，最差的那种身体一个是 2、一个是 −20", 0.5 * 12 + 0.5 * 2 == 7)
+check("0.1 × (−20) = −2；9 + (−2) = 9 − 2 = 7", round(0.1 * (-20), 9) == -2 and 9 + (-2) == 9 - 2 == 7)
+BODY_P = {"轻": 0.9, "重": 0.1}                              # 折叠里的迷你版：每种身体上，两种局各占一半
+EPISODES = {"轻": [(0.5, 12), (0.5, 8)], "重": [(0.5, -10), (0.5, -30)]}
+inner = {b: sum(p * g for p, g in EPISODES[b]) for b in BODY_P}
+outer = sum(BODY_P[b] * inner[b] for b in BODY_P)
+flat = sum(BODY_P[b] * p * g for b in BODY_P for p, g in EPISODES[b])
+print(f"两层平均：内层 轻 {inner['轻']:g}、重 {inner['重']:g}；外层 {outer:g}。四种组合摊开只平均一次：{flat:g}")
+check("内层：0.5 × 12 + 0.5 × 8 = 10，0.5 × (−10) + 0.5 × (−30) = −20；外层 0.9 × 10 + 0.1 × (−20) = 7",
+      math.isclose(inner["轻"], 10) and math.isclose(inner["重"], -20) and math.isclose(outer, 7)
+      and 0.5 * 12 + 0.5 * 8 == 10 and 0.5 * (-10) + 0.5 * (-30) == -20)
+check("摊开：0.9 × 0.5 = 0.45、0.1 × 0.5 = 0.05；0.45 × 12 + 0.45 × 8 + 0.05 × (−10) + 0.05 × (−30) = 5.4 + 3.6 − 0.5 − 1.5 = 7",
+      round(0.9 * 0.5, 2) == 0.45 and round(0.1 * 0.5, 2) == 0.05 and round(0.45 * 12, 1) == 5.4 and round(0.45 * 8, 1) == 3.6
+      and round(0.05 * -10, 1) == -0.5 and round(0.05 * -30, 1) == -1.5 and round(5.4 + 3.6 - 0.5 - 1.5, 9) == 7 and math.isclose(flat, outer))
+check("分配律倒过来用：0.45 × 12 + 0.45 × 8 = 0.9 × (0.5 × 12 + 0.5 × 8) = 0.9 × 10", math.isclose(0.45 * 12 + 0.45 * 8, 0.9 * (0.5 * 12 + 0.5 * 8))
+      and math.isclose(0.9 * (0.5 * 12 + 0.5 * 8), 0.9 * 10))
+rng_mix = np.random.default_rng(1)                         # 换一组随便的比例和回报：两层平均 = 摊开平均，不是巧合
+p_b = rng_mix.dirichlet(np.ones(3))
+p_e = rng_mix.dirichlet(np.ones(4), size=3)
+g_be = rng_mix.normal(0, 10, size=(3, 4))
+check("换一组随机的身体比例、局的比例和回报：先内层再外层，和四乘三种组合摊开平均，结果相同",
+      math.isclose(float(p_b @ (p_e * g_be).sum(axis=1)), float((p_b[:, None] * p_e * g_be).sum())))
+check("质量每一小块都乘 1.05，惯量 Σ 质量 × 距离² 也乘 1.05（分配律）",
+      math.isclose(sum(1.05 * m * r ** 2 for m, r in ((0.1, 0.03), (0.2, 0.05), (0.05, 0.08))),
+                   1.05 * sum(m * r ** 2 for m, r in ((0.1, 0.03), (0.2, 0.05), (0.05, 0.08)))))
 stages = cfg.curriculum["com_range"].params["range_stages"]
 print("躯干质心课程：" + "；".join(f"第 {s['step'] // 24} 次迭代起 ±{s['range'] * 1000:g} mm" for s in stages))
 check("躯干质心课程：±3 → ±5 → ±10 → ±15 mm，在第 0、500、1000、1500 次迭代换挡",
@@ -783,6 +938,8 @@ CFG = ["JOINT_FRICTION_RANDOMIZATION_RANGE = (0.9, 1.1)", "ARMATURE_RANDOMIZATIO
        "VELOCITY_PUSH_INTERVAL_S = (3.0, 6.0)", "VELOCITY_PUSH_RANGE = (-0.3, 0.3)", "IMU_ORIENTATION_RANDOMIZATION_ANGLE = 6.0",
        "ENCODER_BIAS_RANGE = (-0.015, 0.015)", "joint_pos_action.scale = 1.0", 'cfg.events["expand_bam_friction_fields"] = EventTermCfg(',
        'cfg.events["foot_friction"].params["ranges"] = (0.7, 1.3)', "func=microduck_mdp.randomize_bam_friction,"]
+check("📍 的窗口：半宽 1.75 × 2.81 ÷ 7.5 ≈ 0.656（就是 4.92 ÷ 7.5）；按 bam 的精确参数 R × 1.75 ÷ 7.5 也是 0.656",
+      round(1.75 * 2.81 / 7.5, 3) == 0.656 and round(4.92 / 7.5, 3) == 0.656 and round(R * 1.75 / VIN, 3) == 0.656)
 for label, path, wanted in (
         ("mjlab/envs/mdp/actions/actions.py（JointPositionAction）", MJ / "envs" / "mdp" / "actions" / "actions.py", ACTIONS),
         ("bam/actuator.py（compute_control / compute_torque）", bam_src / "actuator.py", BAM_LINES),

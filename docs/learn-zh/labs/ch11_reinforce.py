@@ -67,6 +67,13 @@ check("字面值：J(0.51) = 2.02，J(0.49) = 1.98，(2.02 − 1.98) / 0.02 = 2"
 check("梯度上升一步：p 0.5 → 0.7，J 2 → 2.4", math.isclose(p1, 0.7) and math.isclose(J(p1), 2.4))
 check("自测：再走一步 p = 0.7 + 0.1 × 2 = 0.9，J = 2.8；下一步 1.1 越过了 1",
       math.isclose(p2, 0.9) and math.isclose(J(p2), 2.8) and math.isclose(p3, 1.1) and p3 > 1)
+check("化简：3p + 1 × (1 − p) = 3p + 1 − p = 1 + 2p（p = 0、0.3、0.5、0.9 逐个相等）；p = 0.5：3 × 0.5 + 1 × 0.5 = 2 = 1 + 2 × 0.5",
+      all(math.isclose(3 * p + 1 * (1 - p), 1 + 2 * p) and math.isclose(3 * p + 1 - p, 1 + 2 * p) for p in (0.0, 0.3, 0.5, 0.9))
+      and 3 * 0.5 + 1 * 0.5 == 2 == 1 + 2 * 0.5)
+check("字面值：1 + 2 × 0.51 = 2.02，1 + 2 × 0.49 = 1.98；只往右走 (2.02 − 2) / 0.01 = 2；J(0.7) = 1 + 2 × 0.7 = 2.4",
+      math.isclose(1 + 2 * 0.51, 2.02) and math.isclose(1 + 2 * 0.49, 1.98) and math.isclose((2.02 - 2) / 0.01, 2)
+      and math.isclose(1 + 2 * 0.7, 2.4) and math.isclose((J(P0 + H) - J(P0)) / H, slope))
+check("11.0 节：actor 的旋钮 = 网络的 197,774 个 + 14 个 σ = 197,788", 197_774 + 14 == 197_788)
 
 # ---------------------------------------------------------------------------
 banner("2. 对数导数技巧：抽到谁就推谁，推多少看分数")
@@ -113,6 +120,10 @@ check("第二步：两笔各算一次 3 + (−1) = 2 = 斜率；p 加 0.01，蓝
       and math.isclose(J(P0 + 0.01) - J(P0), 0.02))
 check("图 ①：不除以概率时面积跟着 p 变——p = 0.5 是 1.5 和 −0.5，p = 0.8 是 2.4 和 −0.2",
       all(math.isclose(x, y) for x, y in zip(raw_area[P0] + raw_area[0.8], (1.5, -0.5, 2.4, -0.2))))
+check("第一步的数：p 0.5 → 0.51，蓝键的概率多 0.01，绿键的 1 − p 从 0.5 变成 0.49、少 0.01；约掉：0.8 × (3 ÷ 0.8) = 3",
+      math.isclose(0.51 - 0.5, 0.01) and math.isclose((1 - 0.51) - (1 - 0.5), -0.01) and math.isclose(0.8 * (3 / 0.8), 3))
+check("字面值：1 ÷ 0.5 = 2，2 × 3 = 6；1 ÷ 0.8 = 1.25，1.25 × 3 = 3.75",
+      1 / 0.5 == 2 and 2 * 3 == 6 and 1 / 0.8 == 1.25 and 1.25 * 3 == 3.75)
 
 # ln 的导数：缩 h 量一次，torch 自动求导再算一次
 ln_fd = (math.log(0.501) - math.log(0.5)) / 0.001
@@ -127,6 +138,24 @@ print(f"torch：ln p 对 p 的导数 {grad_ln_blue:g}，ln(1 − p) 对 p 的导
 check("(ln 0.501 − ln 0.5) / 0.001 = 1.998，靠近 1/0.5 = 2", round(ln_fd, 3) == 1.998)
 check("torch：d ln p / dp = 1/p = 2，d ln(1 − p) / dp = −1/(1 − p) = −2",
       math.isclose(grad_ln_blue, 1 / P0) and math.isclose(grad_ln_green, -1 / (1 - P0)))
+ln_slopes = [(x, (math.log(x + 0.001) - math.log(x)) / 0.001) for x in (0.5, 1, 2, 4)]
+check("第 4 章 4.8 节的四个位置：x = 0.5、1、2、4 处缩 h 的斜率分别靠近 2、1、0.5、0.25（= 1/x：x 翻倍，斜率减半）",
+      all(abs(s - 1 / x) < 0.003 / x for x, s in ln_slopes))
+ln_green_fd = (math.log(0.499) - math.log(0.5)) / 0.001
+print(f"链式法则核对 ln(1 − p)：p 0.5 → 0.501，ln 0.5 = {math.log(0.5):.4f} → ln 0.499 = {math.log(0.499):.4f}，"
+      f"变了 {math.log(0.499) - math.log(0.5):.4f}，÷ 0.001 = {ln_green_fd:.3f}（里层倍数 −1 × 外层 1/0.5 = 2 → −2）")
+check("链式法则：里层 −1、外层 1/0.5 = 2，相乘 2 × (−1) = −2（ln p 是 2 × 1 = 2）；人民币 → 欧元 0.14 × 0.9 = 0.126",
+      2 * -1 == -2 and 2 * 1 == 2 and math.isclose(1 / 0.5 * -1, grad_ln_green) and math.isclose(0.14 * 0.9, 0.126))
+check("缩 h（字面值）：ln 0.5 → −0.6931，ln 0.499 → −0.6951，−0.6951 − (−0.6931) = −0.0020，÷ 0.001 = −2.0；不舍入是 −2.002",
+      round(math.log(0.5), 4) == -0.6931 and round(math.log(0.499), 4) == -0.6951 and round(-0.6951 - -0.6931, 4) == -0.0020
+      and round(-0.0020 / 0.001, 1) == -2.0 and round(ln_green_fd, 3) == -2.002)
+check("∇ln π = ∇π/π：蓝键 (+1)/0.5 = 2、绿键 (−1)/0.5 = −2，和 torch 的两个导数一致；两边乘 π：0.5 × 2 = 1、0.5 × (−2) = −1，正是两个概率的导数",
+      math.isclose(1 / P0, grad_ln_blue) and math.isclose(-1 / (1 - P0), grad_ln_green)
+      and math.isclose(P0 * grad_ln_blue, 1) and math.isclose((1 - P0) * grad_ln_green, -1) and 0.5 * 2 == 1 and 0.5 * -2 == -1)
+check("三行表：(+1) × 3 + (−1) × 1 = 2；0.5 × (2 × 3) + 0.5 × (−2 × 1) = 3 − 1 = 2；0.5 × 6 + 0.5 × (−2) = 2（三行都等于斜率）",
+      1 * 3 + -1 * 1 == 2 and 0.5 * (2 * 3) + 0.5 * (-2 * 1) == 3 - 1 == 2 and 0.5 * 6 + 0.5 * -2 == 2
+      and math.isclose(1 * R_BLUE + -1 * R_GREEN, slope)
+      and math.isclose(P0 * (grad_ln_blue * R_BLUE) + (1 - P0) * (grad_ln_green * R_GREEN), slope))
 
 # 只凭“玩”的记录：按策略抽 10 万次，每次记那一笔，取平均
 N_PLAYS = 100_000
@@ -138,6 +167,10 @@ print(f"按策略抽 {N_PLAYS:,} 次：蓝键 {int(blue_drawn.sum()):,} 次，�
 check("抽 10 万次取平均 = 1.990（这一组随机数）", round(play_mean, 3) == 1.990)
 check(f"和斜率 {fmt(slope)} 之差小于 4 × 单次标准差 / √n（{4 * 4 / math.sqrt(N_PLAYS):.3f}）",
       abs(play_mean - slope) < 4 * 4 / math.sqrt(N_PLAYS))
+print(f"单次记的数的散布：{float(plays.std()):.4f}；10 万次平均的散布 ≈ 4 / √100000 = 4 / {math.sqrt(N_PLAYS):.1f} = {4 / math.sqrt(N_PLAYS):.4f}")
+check("10 万次的运气：6 和 −2 离 2 都是 4（单次的散布就是 4）；√100000 → 316.2，4 ÷ 316.2 → 0.013；1.990 只差 0.010",
+      abs(6 - 2) == abs(-2 - 2) == 4 and math.isclose(float(plays.std()), 4, rel_tol=1e-3) and round(math.sqrt(100_000), 1) == 316.2
+      and round(4 / 316.2, 3) == 0.013 and round(abs(1.990 - 2), 3) == 0.010)
 
 # ---------------------------------------------------------------------------
 banner("2b. 画图：figures/ch11_two_buttons.png（原样记 vs 除以概率：宽 = 抽到的比例，高 = 每次记的数，面积 = 在平均里占的份）")
@@ -218,6 +251,30 @@ check("规则 (0.2 − 0)/0.5² = 0.8，和 torch 的自动求导一致", math.i
 check("单样本贡献 (0.2 − 0)/0.5² × 1.5 = 1.2；μ → 0.012；分数 −1.5 时 μ → −0.012",
       math.isclose(push, 1.2) and math.isclose(mu_up, 0.012) and math.isclose(mu_down, -0.012))
 
+# ln 密度的三项式在 a = 0.2 处核对一次（第 4 章 4.8 节折叠块的式子）
+dens_02 = math.exp(-0.08) / (SIGMA * math.sqrt(2 * math.pi))
+lp_three = -(A_SAMPLE - MU) ** 2 / (2 * SIGMA ** 2) - math.log(SIGMA) - 0.5 * math.log(2 * math.pi)
+lp_torch = torch.distributions.Normal(MU, SIGMA).log_prob(torch.tensor(A_SAMPLE)).item()
+print(f"ln 密度三项式在 a = 0.2：−0.08 − ln 0.5 − ½ ln(2π) = −0.08 + {-math.log(0.5):.4f} − {0.5 * math.log(2 * math.pi):.4f} = {lp_three:.4f}；"
+      f"密度 exp(−0.08) / (0.5 × 2.5066) = {dens_02:.4f}，ln {dens_02:.4f} = {math.log(dens_02):.4f}；torch：{lp_torch:.4f}")
+check("ln 密度三项式（字面值）：−(0.2 − 0)² ÷ (2 × 0.25) = −0.08；−ln 0.5 → 0.6931；−½ × ln 6.2832 → −0.9189；−0.08 + 0.6931 − 0.9189 = −0.3058；"
+      "exp(−0.08) ÷ (0.5 × 2.5066) → 0.7365，ln 0.7365 → −0.3058，torch 的 log_prob 也是 −0.3058",
+      math.isclose(-((0.2 - 0) ** 2) / (2 * 0.25), -0.08) and round(-math.log(0.5), 4) == 0.6931 and round(-0.5 * math.log(6.2832), 4) == -0.9189
+      and round(-0.08 + 0.6931 - 0.9189, 4) == -0.3058 and round(math.exp(-0.08) / (0.5 * 2.5066), 4) == 0.7365
+      and round(math.log(0.7365), 4) == -0.3058 and round(lp_three, 4) == -0.3058 and round(lp_torch, 4) == -0.3058
+      and round(dens_02, 4) == 0.7365)
+check("缩 h 表的第二行：0.2 − 0.01 = 0.19，0.19² = 0.0361，取负号 −0.0722，−0.0722 − (−0.08) = 0.0078，÷ 0.01 = 0.78",
+      math.isclose(0.2 - 0.01, 0.19) and math.isclose(0.19 ** 2, 0.0361) and math.isclose(-0.0361 / 0.5, -0.0722)
+      and math.isclose(-0.0722 - -0.08, 0.0078) and math.isclose(0.0078 / 0.01, 0.78))
+check("差的 0.02、0.002：0.8 − 0.78 = 0.02，0.8 − 0.798 = 0.002——步子缩 10 倍，差距也缩 10 倍",
+      math.isclose(rule - fd1, 0.02) and math.isclose(rule - fd2, 0.002) and math.isclose((rule - fd1) / (rule - fd2), 10))
+check("三个倍数：−1/(2σ²) = −1 ÷ 0.5 = −2，2(a − μ) = 2 × 0.2 = 0.4，里层 −1；(−2) × 0.4 × (−1) = 0.8",
+      -1 / (2 * SIGMA ** 2) == -2 and math.isclose(2 * (A_SAMPLE - MU), 0.4) and math.isclose(-2 * 0.4 * -1, 0.8)
+      and math.isclose(-1 / (2 * SIGMA ** 2) * 2 * (A_SAMPLE - MU) * -1, rule))
+check("推得多狠：a = 0.4 → 0.4 ÷ 0.25 = 1.6（0.8 的 2 倍），a = −0.2 → −0.8，a = 0 → 0；σ = 0.25 时 σ² = 0.0625，0.2 ÷ 0.0625 = 3.2 = 4 × 0.8",
+      math.isclose((0.4 - MU) / SIGMA ** 2, 1.6) and math.isclose(1.6 / 0.8, 2) and math.isclose((-0.2 - MU) / SIGMA ** 2, -0.8)
+      and (0 - MU) / SIGMA ** 2 == 0 and 0.25 ** 2 == 0.0625 and math.isclose(0.2 / 0.0625, 3.2) and math.isclose(3.2, 4 * 0.8))
+
 # 一个能对答案的例子：中心 0.3、宽 0.5，分数 r = −(a − 1)²（a = 1 最好）
 MU_EX, SIG_EX = 0.3, 0.5
 
@@ -268,6 +325,39 @@ check("抽 100、1 万、100 万个：1.815、1.405、1.398（这一组随机数
       [round(trick_est[n], 3) for n in (100, 10_000, 1_000_000)] == [1.815, 1.405, 1.398])
 check("三个估计离 1.4 都不到 4 × 单次标准差 / √n：样本越多越准（第 4 章 4.5 节）",
       all(abs(trick_est[n] - slope_ex) < 4 * exact_std_plain / math.sqrt(n) for n in trick_est))
+check("样本多 100 倍，散布缩成十分之一：√100 = 10", math.sqrt(100) == 10)
+check("分数 −(a − 1)²：a = 1 → −(1 − 1)² = 0 分，a = 0.5 → −(0.5 − 1)² = −0.25 分，a = 2 → −(2 − 1)² = −1 分", r_ex(1.0) == 0 and r_ex(0.5) == -0.25 and r_ex(2.0) == -1)
+check("移项：2.92 = 15.17 − 12.25，两边加 12.25 → 2.92 + 12.25 = 15.17", round(15.17 - 12.25, 2) == 2.92 and round(2.92 + 12.25, 2) == 15.17)
+a_chk = MU_EX + SIG_EX * np.random.default_rng(30).standard_normal(400_000)    # 只用来核对 ①–③（自己的随机数，不动别处）
+print(f"①–③ 用 40 万个样本核对：a − 1 的平均 {np.mean(a_chk - 1):.4f}（μ − 1 = −0.7），方差 {np.var(a_chk - 1):.4f}（σ² = 0.25），"
+      f"−(a − 1)² 的平均 {np.mean(r_ex(a_chk)):.4f}（−((μ − 1)² + σ²) = −0.74）")
+check("①–③：−X 的平均 = −（X 的平均）；a − 1 的平均是 μ − 1 = −0.7、方差还是 σ² = 0.25（平移不改方差）；"
+      "−(a − 1)² 的平均 = −((μ − 1)² + σ²)（40 万个样本，容差 0.01）",
+      abs(float(np.mean(a_chk - 1)) - (MU_EX - 1)) < 0.01 and abs(float(np.var(a_chk - 1)) - SIG_EX ** 2) < 0.01
+      and math.isclose(float(np.var(a_chk - 1)), float(np.var(a_chk)), rel_tol=1e-9)
+      and math.isclose(float(np.mean(-((a_chk - 1) ** 2))), -float(np.mean((a_chk - 1) ** 2)))
+      and abs(float(np.mean(r_ex(a_chk))) - J_ex(MU_EX)) < 0.01)
+check("字面值：μ − 1 = −0.7，(−0.7)² = 0.49；0.31 − 1 = −0.69，0.69² = 0.4761；−0.7261 + 0.74 = 0.0139，÷ 0.01 → 1.39；−2 × (−0.7) = 1.4",
+      math.isclose(0.3 - 1, -0.7) and math.isclose((-0.7) ** 2, 0.49) and math.isclose(0.31 - 1, -0.69) and math.isclose(0.69 ** 2, 0.4761)
+      and math.isclose(-0.7261 + 0.74, 0.0139) and round(0.0139 / 0.01, 2) == 1.39 and math.isclose(-2 * -0.7, 1.4)
+      and math.isclose(-2 * (MU_EX - 1), 2 * (1 - MU_EX)))
+slope_fd_small = (J_ex(MU_EX + 0.001) - J_ex(MU_EX)) / 0.001
+print(f"小角：(0.7 − 0.01)² = 0.49 − 0.014 + 0.0001 = {0.49 - 0.014 + 0.0001:.4f}；步子 0.001：J(0.301) = {J_ex(0.301):.6f}，"
+      f"斜率 {slope_fd_small:.3f}")
+check("小角：(0.7 − 0.01)² = 0.49 − 2 × 0.7 × 0.01 + 0.01² = 0.49 − 0.014 + 0.0001 = 0.4761；"
+      "步子 0.001：J(0.301) = −(0.699² + 0.25) = −0.738601，(−0.738601 + 0.74) ÷ 0.001 = 1.399",
+      math.isclose((0.7 - 0.01) ** 2, 0.49 - 2 * 0.7 * 0.01 + 0.01 ** 2) and math.isclose(0.49 - 0.014 + 0.0001, 0.4761)
+      and math.isclose(2 * 0.7 * 0.01, 0.014) and math.isclose(J_ex(0.301), -0.738601) and math.isclose(-(0.699 ** 2 + 0.25), -0.738601)
+      and round((-0.738601 + 0.74) / 0.001, 3) == 1.399 and round(slope_fd_small, 3) == 1.399)
+
+# 落到网络上的迷你版：网络只有一个旋钮 w，中心 μ = w × s；此刻 w = 0、s = 0.5
+S_MINI = 0.5
+w_t = torch.tensor(0.0, requires_grad=True)
+torch.distributions.Normal(w_t * S_MINI, SIGMA).log_prob(torch.tensor(A_SAMPLE)).backward()
+print(f"迷你版 μ = w × s（w = 0，s = 0.5）：ln π 对 w 的导数 = {w_t.grad.item():.4f}（0.8 × 0.5），乘分数 1.5 = {w_t.grad.item() * SCORE:.4f}")
+check("迷你版：w 加 0.01，μ 加 0.5 × 0.01 = 0.005（倍数 0.5）；链式 0.8 × 0.5 = 0.4（torch 一致）；乘分数 1.5 得 0.6",
+      math.isclose(S_MINI * 0.01, 0.005) and math.isclose(rule * S_MINI, 0.4) and math.isclose(w_t.grad.item(), 0.4, rel_tol=1e-6)
+      and math.isclose(0.4 * 1.5, 0.6))
 
 # 自测：台阶奖励——a 超过 0.5 得 1 分，否则 0 分。它对 a 的导数几乎处处是 0
 step_r = lambda a: (a > 0.5).astype(float)
@@ -283,6 +373,11 @@ check("自测：台阶奖励下，抽到 0.7 记 (0.7/0.25) × 1 = 2.8；抽到 
 check("图 ①：σ = 0.5 时直线斜率 1/0.25 = 4；钟窄一半（σ = 0.25），同一个 0.2 推到 0.2/0.0625 = 3.2，是 0.8 的 4 倍",
       math.isclose(1 / SIGMA ** 2, 4) and math.isclose(A_SAMPLE / (SIGMA / 2) ** 2, 3.2) and math.isclose(3.2 / 0.8, 4))
 check("台阶奖励的策略梯度不是 0：平均 0.48（= 钟在 0.5 处的高度）", round(step_exact, 2) == 0.48 and abs(step_est - step_exact) < 0.01)
+check("自测答案的来历：台阶两边是平的（a = 0.7、0.71 都得 1 分）；0.5² ÷ (2 × 0.25) = 0.5，exp(−0.5) → 0.6065，"
+      "0.5 × 2.5066 = 1.2533，0.6065 ÷ 1.2533 → 0.484",
+      float(step_r(np.array([0.7]))[0]) == float(step_r(np.array([0.71]))[0]) == 1.0 and 0.5 ** 2 / (2 * 0.25) == 0.5
+      and round(math.exp(-0.5), 4) == 0.6065 and math.isclose(0.5 * 2.5066, 1.2533) and round(0.6065 / 1.2533, 3) == 0.484
+      and round(step_exact, 3) == 0.484)
 
 # 把钟一步步挪过去：每次更新抽 64 个，按对数导数技巧估斜率，按学习率 0.02 挪一次中心（σ 不动）
 N_PUSH, ALPHA_PUSH, STEPS_PUSH = 64, 0.02, 60
@@ -390,6 +485,28 @@ check("自测 b = 100：−121.25 和 495，平均 0.8 × (−121.25) + 0.2 × 4
       math.isclose(blue_share(0.8, 100), -121.25) and math.isclose(green_share(0.8, 100), 495)
       and math.isclose(0.8 * -121.25, -97) and math.isclose(0.2 * 495, 99) and math.isclose(average_share(0.8, 100), 2))
 
+# “为什么平均不变”的两步，和“那抖动呢”的代数，逐条用数核对
+check("拆开（分配律）：2 × (3 − 2) = 2 × 3 − 2 × 2 = 6 − 4 = 2；乘数的平均：0.8 × 1.25 = 1，0.2 × (−5) = −1，正是两个概率的导数 +1、−1",
+      2 * (3 - 2) == 2 * 3 - 2 * 2 == 6 - 4 == 2 and 0.8 * 1.25 == 1 and 0.2 * -5 == -1
+      and all(math.isclose(p * (1 / p), 1) and math.isclose((1 - p) * (-1 / (1 - p)), -1) for p in (0.2, P0, 0.8)))
+check("概率之和永远是 1：p 从 0.5 拧到 0.51，蓝键多 0.01、绿键少 0.01，p + (1 − p) 还是 1（导数 0）；"
+      "一行式子在 p = 0.8：0.8 × (1/0.8) + 0.2 × (−1/0.2) = (+1) + (−1) = 0",
+      math.isclose((0.51 - 0.5) + ((1 - 0.51) - (1 - 0.5)), 0, abs_tol=1e-12) and all(p + (1 - p) == 1 for p in (0.2, 0.5, 0.51, 0.8))
+      and math.isclose(0.8 * (1 / 0.8) + 0.2 * (-1 / 0.2), 0, abs_tol=1e-12))
+check("b = 2 核对：两种都记 2，平均 0.5 × 2 + 0.5 × 2 = 2", 0.5 * 2 + 0.5 * 2 == 2 and math.isclose(average_share(P0, B), 2))
+B_LIST = (0.0, 1.0, 2.0, 3.0, 100.0)
+check("展开：2 × (3 − b) = 6 − 2b，(−2) × (1 − b) = 2b − 2（b = 0、1、2、3、100 逐个相等）；b = 1：蓝 4 = 6 − 2，绿 0 = 2 − 2",
+      all(math.isclose(2 * (3 - b), 6 - 2 * b) and math.isclose(-2 * (1 - b), 2 * b - 2) for b in B_LIST)
+      and 2 * (3 - 1) == 4 == 6 - 2 * 1 and -2 * (1 - 1) == 0 == 2 * 1 - 2)
+check("离平均：(6 − 2b) − 2 = 4 − 2b，(2b − 2) − 2 = 2b − 4 = −(4 − 2b)；提公因数 4 − 2b = 2 × (2 − b)；"
+      "b = 1 时 2 和 −2，b = 0 时 4 = 2 × 2；|−3| = |3| = 3，b = 3 时 2 × |2 − 3| = 2",
+      all(math.isclose((6 - 2 * b) - 2, 4 - 2 * b) and math.isclose((2 * b - 2) - 2, -(4 - 2 * b)) and math.isclose(4 - 2 * b, 2 * (2 - b))
+          for b in B_LIST)
+      and (6 - 2) - 2 == 2 and (2 - 2) - 2 == -2 == -(4 - 2) and 4 == 2 * 2 and abs(-3) == 3 == abs(3) and 2 * abs(2 - 3) == 2)
+check("两个 2 的来历：乘数的大小 1 ÷ 0.5 = 2，平均分 0.5 × 3 + 0.5 × 1 = 2；表里 b = 1 那一行：0.5 × 4 + 0.5 × 0 = 2，4 − 2 = 2 = 2 × |2 − 1|",
+      1 / 0.5 == 2 and 0.5 * 3 + 0.5 * 1 == 2 and 0.5 * 4 + 0.5 * 0 == 2 and 4 - 2 == 2 == 2 * abs(2 - 1))
+check("优势：蓝键 3 − 2 = +1，绿键 1 − 2 = −1", 3 - 2 == 1 and 1 - 2 == -1)
+
 # 连续动作：11.3 节那个例子（中心 0.3、宽 0.5、分数 −(a − 1)²），基线取平均分 V = J(0.3) = −0.74
 N_SAMPLES = 64  # TWEAK-2: 256
 ROUNDS = 2000
@@ -422,6 +539,22 @@ check("正文引用：64 个样本时理论 0.425 → 0.317，实测 0.427 → 0
       and round(s_plain, 2) == 0.43 and round(s_base, 2) == 0.32 and round(sample_ratio, 1) == 1.8)
 check("字面值：3.402 / 8 = 0.425，2.534 / 8 = 0.317，(3.402 / 2.534)² = 1.8",
       round(3.402 / 8, 3) == 0.425 and round(2.534 / 8, 3) == 0.317 and round((3.402 / 2.534) ** 2, 1) == 1.8)
+# 3.402、2.534 是精确求和算的；再抽 100 万个样本直接量一次（自己的随机数，不动上面的 rng4）
+a_one = MU_EX + SIG_EX * np.random.default_rng(50).standard_normal(1_000_000)
+one_plain = r_ex(a_one) * (a_one - MU_EX) / SIG_EX ** 2
+one_base = (r_ex(a_one) - V_EX) * (a_one - MU_EX) / SIG_EX ** 2
+print(f"直接抽 100 万个样本，量单个样本贡献的标准差：不减基线 {one_plain.std():.2f}，减基线 {one_base.std():.2f}"
+      f"（精确求和：{exact_std_plain:.3f}、{exact_std_base:.3f}）")
+check("抽 100 万个样本直接量：单个样本贡献的标准差 3.40 和 2.53（和精确求和的 3.402、2.534 相差不到 0.02）",
+      round(float(one_plain.std()), 2) == 3.40 and round(float(one_base.std()), 2) == 2.53
+      and abs(float(one_plain.std()) - exact_std_plain) < 0.02 and abs(float(one_base.std()) - exact_std_base) < 0.02)
+check("样本要多几倍（字面值）：3.402 ÷ 0.317 → 10.73，10.73² → 115，115 ÷ 64 → 1.8；或 3.402 ÷ 2.534 → 1.343，1.343² → 1.80；"
+      "√64 = 8（8 × 8 = 64）；12 ÷ 4 = 3，所以 4 = 12 ÷ 3；不舍入：64 × (3.4015 / 2.5340)² 约 115",
+      round(3.402 / 0.317, 2) == 10.73 and round(10.73 ** 2) == 115 and round(115 / 64, 1) == 1.8
+      and round(3.402 / 2.534, 3) == 1.343 and round(1.343 ** 2, 2) == 1.80 and math.sqrt(64) == 8 and 8 * 8 == 64
+      and 12 / 4 == 3 and 12 / 3 == 4 and round(64 * (exact_std_plain / exact_std_base) ** 2) == 115)
+check("第 4 章 4.5 节的同一个道理：σ 大一倍，√n 也得大一倍，n 就要 2 × 2 = 4 倍：2σ/√(4n) = σ/√n（σ = 1、n = 64 代入）",
+      math.isclose(2 * 1 / math.sqrt(4 * 64), 1 / math.sqrt(64)) and 2 * 2 == 4)
 
 # 进阶：拿这一批自己的平均当基线（第 5 节就是这么做的），平均会缩成 (N − 1)/N 倍
 ROUNDS_BIG = 20_000
@@ -434,6 +567,7 @@ check(f"批平均当基线：平均靠近 1.4 × (N − 1)/N = {1.4 * shrink:.4f
       abs(est_batch.mean() - 1.4 * shrink) < 0.006 and (N_SAMPLES > 200 or abs(est_batch.mean() - 1.4) > 0.012))
 check("正文引用：N = 64 时 63/64 = 0.984；这一组随机数的 2 万次平均是 1.3745",
       round(63 / 64, 3) == 0.984 and round(float(est_batch.mean()), 4) == 1.3745 and round(1.4 * 63 / 64, 4) == 1.3781)
+check("进阶：1 − 1/N = (N − 1)/N（N = 64：1 − 1/64 = 63/64）", math.isclose(1 - 1 / 64, 63 / 64))
 
 # ---------------------------------------------------------------------------
 banner("4b. 画图：figures/ch11_baseline_variance.png（减了基线，样本贡献挤到平均附近）")
@@ -565,6 +699,32 @@ def reinforce(c, rounds, seed=0, baseline=True, offset=0.0):
     return hist
 
 
+check("第 3 条为什么这样搭：权重 +1（优势）× ln p 对 p 的导数是 1 × 2 = 2，正是 11.4 节减了基线以后蓝键记的 2；"
+      "损失 −X 的导数 −2，梯度下降 p − 0.1 × (−2) = p + 0.1 × 2，和梯度上升一样",
+      math.isclose(1 * grad_ln_blue, 2) and math.isclose(blue_share(P0, B), 1 * grad_ln_blue)
+      and math.isclose(P0 - 0.1 * -2, P0 + 0.1 * 2) and math.isclose(-(1 * grad_ln_blue), -2))
+p_loss = torch.tensor(P0, requires_grad=True)                     # 同一件事让 torch 做一遍：损失 = −(权重 × ln p)，权重 +1
+(-(1.0 * torch.log(p_loss))).backward()
+check("torch：损失 −(1 × ln p) 在 p = 0.5 处的梯度是 −2；SGD 走一步（学习率 0.1）p = 0.5 − 0.1 × (−2) = 0.7",
+      math.isclose(p_loss.grad.item(), -2) and math.isclose(P0 - 0.1 * p_loss.grad.item(), 0.7))
+
+# 进阶折叠：走廊前两步（九成按 →、八成照办），一整局的概率是一串概率相乘
+P_EP = 1 * 0.9 * 0.8 * 0.9 * 0.8
+print(f"\n进阶：走廊前两步的概率 1 × 0.9 × 0.8 × 0.9 × 0.8 = {P_EP:.4f}；取 ln 拆三块：0 + 2 × ({math.log(0.9):.4f}) + 2 × ({math.log(0.8):.4f}) = "
+      f"{2 * math.log(0.9) + 2 * math.log(0.8):.4f}，ln {P_EP:.4f} = {math.log(P_EP):.4f}")
+check("进阶：连乘 1 × 0.9 × 0.8 × 0.9 × 0.8 = 0.5184；ln 拆三块：0 − 0.1054 − 0.2231 − 0.1054 − 0.2231 = −0.6570 = ln 0.5184",
+      math.isclose(P_EP, 0.5184) and round(math.log(0.9), 4) == -0.1054 and round(math.log(0.8), 4) == -0.2231
+      and round(0 - 0.1054 - 0.2231 - 0.1054 - 0.2231, 4) == -0.6570 and round(math.log(0.5184), 4) == -0.6570
+      and math.isclose(math.log(P_EP), math.log(1) + 2 * math.log(0.9) + 2 * math.log(0.8)))
+th = torch.tensor(math.log(0.9 / 0.1), requires_grad=True)       # 策略那块由旋钮 θ 决定：π(→) = sigmoid(θ) = 0.9
+pi_right = torch.sigmoid(th)
+g_all = torch.autograd.grad(math.log(1.0) + 2 * torch.log(pi_right) + 2 * math.log(0.8), th, retain_graph=True)[0].item()
+g_policy = torch.autograd.grad(2 * torch.log(pi_right), th)[0].item()
+check("进阶：对 θ 求梯度，开局（ln 1）和环境（ln 0.8）两块不含 θ，导数 0——整局 ln P 的梯度和只留策略那块的一样",
+      math.isclose(g_all, g_policy, rel_tol=1e-6) and math.isclose(float(pi_right), 0.9, rel_tol=1e-6))
+check("推小车的分数：s = 0.5、a = −0.3，停在 0.5 − 0.3 = 0.2，得 −0.2² = −0.04；a = −0.5 停在 0，得 0 分",
+      math.isclose(0.5 - 0.3, 0.2) and math.isclose(-((0.5 + -0.3) ** 2), -0.04) and -((0.5 + -0.5) ** 2) == 0)
+
 ROUNDS_LONG = 3000
 run0 = reinforce(0.0, ROUNDS_LONG)
 rows = [[it, f(run0["reward"][it], 3), f(run0["sigma"][it], 2)] + [f(v, 2) for v in run0["rows"][it]] for it in LOG_ROUNDS]
@@ -614,6 +774,7 @@ check("不减基线、原分数：和减基线几乎一样（第 1500 轮相差�
       abs(curves_bl["不减基线"][1500] - curves_bl["减基线"][1500]) < 0.01)
 check("正文引用：3 个起点第 0 轮的平均分是 −1.748；字面值 100 − 1.748 = 98.252，98.252 / 1.748 = 56.2 倍",
       round(r0, 3) == -1.748 and math.isclose(100 - 1.748, 98.252) and round(98.252 / 1.748, 1) == 56.2)
+check("第四行比另外三条差十几倍：0.494 ÷ 0.037 → 13", round(0.494 / 0.037) == 13)
 
 # ---------------------------------------------------------------------------
 banner("5b. 画图：figures/ch11_reinforce_policy.png（钟的中心学成 −s；平均分一路往上）")
@@ -711,11 +872,38 @@ check("字面值：ln 4.1327 = 1.4189，ln 2 = 0.6931，1.4189 − 0.6931 = 0.72
 check("a = 0.2 处：σ = 0.5 时密度 0.737，σ = 0.4 时 0.880", round(d05, 3) == 0.737 and round(d04, 3) == 0.880)
 check("字面值：exp(−0.08) / (0.5 × 2.5066) = 0.737，exp(−0.125) / (0.4 × 2.5066) = 0.880",
       round(math.exp(-0.08) / (0.5 * 2.5066), 3) == 0.737 and round(math.exp(-0.125) / (0.4 * 2.5066), 3) == 0.880)
+check("exp 里的数：0.2² ÷ (2 × 0.5²) = 0.04 ÷ 0.5 = 0.08；0.04 ÷ (2 × 0.16) = 0.04 ÷ 0.32 = 0.125（0.4² = 0.16）",
+      math.isclose(0.2 ** 2 / (2 * 0.5 ** 2), 0.08) and math.isclose(0.04 / 0.5, 0.08) and math.isclose(0.04 / (2 * 0.16), 0.125)
+      and math.isclose(0.04 / 0.32, 0.125) and math.isclose(0.4 ** 2, 0.16))
+d1_05, d1_04 = dens(1.0, 0.5), dens(1.0, 0.4)
+print(f"a = 1（离中心比 σ 还远）：σ = 0.5 时密度 {d1_05:.3f}，σ = 0.4 时 {d1_04:.3f}（收窄反而更罕见）")
+check("反过来：a = 1 时 σ = 0.5 的密度 exp(−2) ÷ (0.5 × 2.5066) → 0.108，σ = 0.4 的 exp(−3.125) ÷ (0.4 × 2.5066) → 0.044；"
+      "1 ÷ (2 × 0.25) = 2，1 ÷ 0.32 = 3.125",
+      round(d1_05, 3) == 0.108 and round(d1_04, 3) == 0.044 and round(math.exp(-2) / (0.5 * 2.5066), 3) == 0.108
+      and round(math.exp(-3.125) / (0.4 * 2.5066), 3) == 0.044 and 1 / (2 * 0.25) == 2 and math.isclose(1 / 0.32, 3.125)
+      and d1_04 < d1_05 and d04 > d05)
+# “随机本身就要扣分”：定一个位置 s 和中心 μ，抽很多个 a，核对 平均分 = −(没对准)² − σ²
+a_cart = -0.5 + 0.19 * np.random.default_rng(60).standard_normal(400_000)          # s = 0.6、中心 −0.5、σ = 0.19
+check("推小车：定 s = 0.6、中心 −0.5（没对准 0.1）、σ = 0.19，−(s + a)² 的平均 = −(0.1² + 0.19²)（40 万个样本，容差 0.002）",
+      abs(float(np.mean(-((0.6 + a_cart) ** 2))) + (0.1 ** 2 + 0.19 ** 2)) < 0.002)
+check("σ 减半，熵少 ln 2：ln(4.13 × σ ÷ 2) = ln(4.13σ) − ln 2（σ = 1、0.5、0.3 都成立）",
+      all(math.isclose(entropy(s / 2), entropy(s) - math.log(2)) for s in (1.0, 0.5, 0.3)))
 
 pushes = {s: 0.01 / s for s in (1.0, 0.1, 0.01)}
 print(f"熵奖励对 σ 的推力 c/σ（c = 0.01）：σ = 1 → {pushes[1.0]:g}，σ = 0.1 → {pushes[0.1]:g}，σ = 0.01 → {pushes[0.01]:g}")
 check("c/σ：c = 0.01 时，σ = 1 推 0.01，σ = 0.1 推 0.1，σ = 0.01 推 1（σ 缩到十分之一，推力大十倍）",
       math.isclose(pushes[1.0], 0.01) and math.isclose(pushes[0.1], 0.1) and math.isclose(pushes[0.01], 1.0))
+h_fd = 0.1 * (entropy(0.501) - entropy(0.5)) / 0.001
+sig_t = torch.tensor(0.5, requires_grad=True)
+(0.1 * torch.distributions.Normal(0.0, sig_t).entropy()).backward()
+print(f"c × H 的推力（c = 0.1，σ = 0.5）：缩 h 得 {h_fd:.4f}，torch 得 {sig_t.grad.item():.4f}，公式 c/σ = 0.2")
+check("c × H 的推力：ln 4.13 那块不变，涨的只是 ln σ；缩 h（σ 0.5 → 0.501）0.1 × 1.998 = 0.1998，靠近 c/σ = 0.1 ÷ 0.5 = 0.2（torch 给 0.2）",
+      math.isclose(entropy(0.501) - entropy(0.5), math.log(0.501) - math.log(0.5)) and round(h_fd, 4) == 0.1998
+      and math.isclose(0.1 * 1.998, 0.1998) and math.isclose(0.1 / 0.5, 0.2) and math.isclose(sig_t.grad.item(), 0.2, rel_tol=1e-6))
+sig14 = torch.full((14,), 0.5, requires_grad=True)                  # 项目：14 口钟的总熵对每一个 σ 的推力
+(0.01 * torch.distributions.Normal(torch.zeros(14), sig14).entropy().sum()).backward()
+check("项目：0.01 × 14 口钟的总熵，对每一个 σ 的推力都是 0.01/σ（只有那一口钟的 ln σ 含它；σ = 0.5 时 0.02）",
+      torch.allclose(sig14.grad, torch.full((14,), 0.02)))
 
 ENTROPY_COEF = 0.1  # TWEAK-3: 0.5
 balance = lambda c: math.sqrt(c / 2)
@@ -725,6 +913,18 @@ check("√(0.1/2) = 0.2236，√(0.01/2) = 0.0707；自测 c = 0.02 → √0.01 
       and math.isclose(2 * balance(0.02), 0.2) and math.isclose(0.02 / balance(0.02), 0.2))
 check("字面值：2 × 0.2236 = 0.4472，0.1 / 0.2236 = 0.4472（两股力在这里相等）",
       math.isclose(2 * 0.2236, 0.4472) and round(0.1 / 0.2236, 4) == 0.4472)
+pull_fd = (-(0.501 ** 2) - -(0.5 ** 2)) / 0.001
+check("拉力：−σ² 的导数是 −2σ；缩 h：σ 0.5 → 0.501，−0.25 → −0.251001，变了 −0.001001，÷ 0.001 = −1.001，靠近 −2 × 0.5 = −1",
+      math.isclose(-(0.501 ** 2), -0.251001) and math.isclose(-0.251001 - -0.25, -0.001001) and math.isclose(pull_fd, -1.001)
+      and -2 * 0.5 == -1)
+net_push = lambda s, c: c / s - 2 * s                                # σ 的总导数：熵的推力 − 分数的拉力
+check("合力表（c = 0.1）：σ = 0.1 拉 0.2、推 1、合 +0.8（变大）；σ = 0.5 拉 1、推 0.2、合 −0.8（变小）；σ = 0.2236 两股都是 0.4472、合 0",
+      math.isclose(2 * 0.1, 0.2) and math.isclose(0.1 / 0.1, 1) and math.isclose(net_push(0.1, 0.1), 0.8)
+      and math.isclose(2 * 0.5, 1) and math.isclose(0.1 / 0.5, 0.2) and math.isclose(net_push(0.5, 0.1), -0.8)
+      and abs(net_push(balance(0.1), 0.1)) < 1e-12)
+check("一步一步解：2σ = 0.1/σ → 两边乘 σ：2σ² = 0.1 → 两边除以 2：σ² = 0.05 → σ = √0.05 → 0.2236（0.2236² ≈ 0.05）；σ = 1 时拉力 2、推力 0.1",
+      math.isclose(2 * balance(0.1) ** 2, 0.1) and math.isclose(balance(0.1) ** 2, 0.05) and round(math.sqrt(0.05), 4) == 0.2236
+      and round(0.2236 ** 2, 4) == 0.05 and 2 * 1 == 2 and 0.1 / 1 == 0.1)
 
 run_small = reinforce(0.01, ROUNDS_LONG)
 run_big = reinforce(ENTROPY_COEF, ROUNDS_LONG)
@@ -779,8 +979,9 @@ def bandit(c, rounds=3000, seed=0):
 
 HILL_CS = (0.0, 0.3, 0.5)
 hills = {c: bandit(c) for c in HILL_CS}
+sig_txt = lambda v: f(v, 3) if v < 100 else f(v, 0)               # 发散到上千的 σ 只印整数：小数点后几位会随机器、版本漂
 table(["熵系数 c", "第 300 轮的 σ", "第 3000 轮的 σ", "第 3000 轮的 μ", "最后 300 轮平均分", "落在哪座山"],
-      [[fmt(c), f(hills[c]["sigma"][300], 3), f(hills[c]["sigma"][3000], 3), f(hills[c]["mu"][3000], 2),
+      [[fmt(c), sig_txt(hills[c]["sigma"][300]), sig_txt(hills[c]["sigma"][3000]), f(hills[c]["mu"][3000], 2),
         f(float(np.mean(hills[c]["reward"][-300:])), 3),
         "小山（1 分）" if abs(hills[c]["mu"][3000]) < 0.5 else ("大山（2 分）" if hills[c]["sigma"][3000] < 1 else "哪座也没停住")]
        for c in HILL_CS])
@@ -822,6 +1023,15 @@ print(f"自测：大山挪到 a = 0.5（1 个 σ）时，一轮 256 个里平均
       f"是原来 {256 * hit[0.5]:.2f} 个的 {near / hit[0.5]:.0f} 倍")
 check("自测：大山挪到 a = 0.5 就在 1 个 σ 处（0.5 / 0.5 = 1），256 个里约 62 个落在它那一带，是原来的 40 倍",
       math.isclose(0.5 / SIG0, 1.0) and round(256 * near) == 62 and round(near / hit[0.5]) == 40)
+valley = float(hill_reward(torch.tensor(0.75)))
+print(f"两座山中间的低谷 a = 0.75：{valley:.3f} 分；大山那一段的面积 {hit[0.5]:.5f}，× 256 = {256 * hit[0.5]:.2f}")
+check("低谷正中 a = 0.75 只有 3 × exp(−4.5) → 0.033 分（两座山都是宽 0.25 的钟形）",
+      round(valley, 3) == 0.033 and math.isclose(valley, 3 * math.exp(-4.5), rel_tol=1e-5) and PEAK_W == 0.25)
+check("大山离中心 1.5 ÷ 0.5 = 3 个 σ；2 个 σ 以外约 1 − 0.95 = 5%；1.25 到 1.75 那一段的面积 → 0.00598，256 × 0.00598 → 1.53",
+      1.5 / 0.5 == 3 and math.isclose(1 - 0.95, 0.05) and round(hit[0.5], 5) == 0.00598 and round(256 * 0.00598, 2) == 1.53)
+check("密度差的两段算法：0.00886 ÷ 5.5 → 0.00161 = 1.61 × 10⁻³；10⁻⁴⁹ = 1 ÷ 10⁴⁹；−3 + 49 = 46；1.61e−3 × 1e49 = 1.61e46（约 1.6e46）",
+      round(0.00886 / 5.5, 5) == 0.00161 and math.isclose(1e-49, 1 / 1e49) and -3 + 49 == 46
+      and math.isclose(1.61e-3 * 1e49, 1.61e46) and float(f"{1.61e46:.1e}") == 1.6e46)
 
 # ---------------------------------------------------------------------------
 banner("6b. 画图：figures/ch11_entropy_sigma.png（σ 停在两股力相等的地方）")
@@ -984,5 +1194,8 @@ g_reinforce = torch.autograd.grad(-(adv_t * logp_t).mean(), mu_t, retain_graph=T
 g_ratio = torch.autograd.grad(-(adv_t * torch.exp(logp_t - logp_t.detach())).mean(), mu_t)[0]
 print(f"−Â × ln π 的梯度：{g_reinforce.numpy()}；−Â × exp(ln π − 旧 ln π) 的梯度：{g_ratio.numpy()}")
 check("更新前（新 = 旧，比率 = 1）：PPO 的 −Â × 比率 和本章的 −Â × ln π 梯度相同", torch.allclose(g_reinforce, g_ratio))
+lp_new_t = torch.distributions.Normal(mu_t.detach() + 0.1, 0.5).log_prob(acts)          # 假想旋钮动了一点：中心各挪 0.1
+check("比率 exp(新 ln π − 旧 ln π) 就是 新密度 ÷ 旧密度（ln 的除法变减法，倒过来用）",
+      torch.allclose(torch.exp(lp_new_t - logp_t.detach()), lp_new_t.exp() / logp_t.detach().exp()))
 
 done()

@@ -121,6 +121,9 @@
 | 冒烟测试 | smoke test | 64 env × 5 iter 的快速检查 | §14.10 |
 | 半开区间 | half-open interval | [a, b)：含 a、不含 b；这一块有 b − a 项，边界编号只归后一块 | §15.1 |
 | 本体感受 | proprioception | 自己身上传感器能测到的量 | §15.2 |
+| IMU / 惯性测量单元 | inertial measurement unit | 躯干里的小芯片：陀螺仪测转多快，加速度计用来估计重力方向 | §15.2 |
+| 横滚 / 俯仰 / 偏航 | roll / pitch / yaw | 绕前后轴（侧歪）/ 左右轴（低头抬头）/ 上下轴（左右转）的转动 | §15.2 |
+| 编码器 | encoder | 舵机里量"关节转到了哪"的部件；真机上会带一点固定偏差 | §15.3 |
 | 右手定则 | right-hand rule | 大拇指指向转轴的正方向，四指弯的方向就是"正着转" | §15.2 |
 | 命令块 | command block | 观测里的 13 维指令 | §15.5 |
 | 零填充 / 死权重 | zero-padding / dead weights | 不用的槽保留并喂小随机值 | §15.7 |
@@ -129,6 +132,8 @@
 | 代价 / 自负号惩罚 | cost / self-negating penalty | ≥0 配负权 / ≤0 配正权 | §16.2 |
 | 盒式指示器 | box indicator | 在区间内为 1 否则 0（air_time） | §16.3 |
 | 核 | kernel | 把"差多远"换算成分数的那一支曲线（钟形、指数、L1……） | §16.7 |
+| 铰链 | hinge | 界内记 0、出了界才按出界多少记分：$\max(0,\ \lvert x\rvert - 0.9)$（`dof_pos_limits`） | §16.7 |
+| 直流分量 | DC component | 一串读数里一直偏向一边、不来回抵消的那部分（1 秒滑动平均留下来的偏差） | §16.8 |
 | 势能式塑形 | potential-based shaping | 用势函数构造附加奖励，需匹配折扣与终止条件 | §16.10 |
 | 目标角 | target joint position | HOME + 动作偏移 | §17.1 |
 | 占空比 | duty cycle | 每一小段时间里开关开着的比例（−1 到 1），决定给电机多少电压 | §17.2 |
@@ -136,6 +141,8 @@
 | 反电动势 | back-EMF | 转得越快推力越小 | §17.3 |
 | 执行器 | actuator | 把目标角变成电机力矩的那一整套（每个 0.005 s 物理步算一次） | §17.4 |
 | BAM | better actuator models | 用真舵机数据拟合的电压模型 | §17.4 |
+| 摩擦预算 | friction budget | 每个物理步算一次的"摩擦最多挡得住多少力矩"；推力没超过就停着不动（MuJoCo 里叫 frictionloss） | §17.4 |
+| 压降 | voltage sag | 舵机一起使劲时电池电压往下掉：电池 − 增益 × 总力矩大小，不低于 6.0 V | §17.4 |
 | 域随机化 | domain randomization, DR | 每只机器人抽一套参数 | §17.7 |
 | 课程学习 | curriculum learning | 先易后难的时间表 | §18.1 |
 | 阶梯函数 | step function | 到点才跳一下，两档之间一动不动（课程不是斜坡） | §18.2 |
@@ -145,8 +152,11 @@
 | 检查点 | checkpoint | model_N.pt，全部旋钮 + 统计 | §19.1 |
 | ONNX | Open Neural Network Exchange | 跨框架的计算图文件 | §19.1 |
 | 算子 | operator | 计算图里的一步（Sub、Div、Gemm、Elu…） | §19.2 |
+| 导出器 | exporter | 把 torch 里的网络翻译成 ONNX 文件的程序（`torch.onnx.export`） | §19.2 |
 | 推理运行时 | inference runtime | 照着计算图一步步算的程序（onnxruntime） | §19.3 |
 | 元数据 | metadata | 跟着 ONNX 一起存的说明项（观测名、命令名…） | §19.3 |
+| 浮点误差 | floating-point error | 电脑存小数只存有限几位（float32 约 7 位），算的顺序不同，结果差在百万分之一上下 | §19.4 |
+| 纯函数 | pure function | 同样的输入永远给同样的输出，自己不记状态（ONNX 策略就是一个） | §19.8 |
 
 
 ## 容易混用的词，放在一起比较

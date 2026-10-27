@@ -64,6 +64,20 @@ check("字面值重算：round(0.798516 × 2 × 0.02, 6) 还是 0.031941", round
 check("错误写法：把 0.0225 再平方一次，分数会变成 0.99495（几乎满分，等于没罚）",
       round(math.exp(-err_sq**2 / STD_SQ_LIN), 5) == 0.99495)
 
+# 为什么平方再相加：不平方直接加，正负会抵消；平方和开根号才是"一共差了多少"
+raw_sum = float(np.sum(diff))
+err_len = math.sqrt(err_sq)
+sigma_lin = math.sqrt(STD_SQ_LIN)
+print(f"  不平方直接加：{' + '.join('(' + mn(d, 2) + ')' for d in diff)} = {mn(raw_sum, 4)}（正负抵消，还成了负数）；"
+      f"平方和开根号 = 误差箭头的长度 {num(err_len, 4)} m/s，是 σ = {num(sigma_lin, 3)} 的 {num(err_len / sigma_lin, 2)} 倍")
+check("不平方直接加：0.1 + (−0.1) + (−0.05) = −0.05（往前慢的和往左飘的抵消了）", round(raw_sum, 6) == -0.05)
+check("误差箭头的长度 √0.0225 = 0.15 m/s（0.15 × 0.15 = 0.0225）",
+      round(err_len, 6) == 0.15 and round(0.15 * 0.15, 6) == 0.0225)
+check("钟形把'差多远'换成 0 到 1 的分：e⁰ = 1，e^−1 = 0.367879，e^−10 = 0.000045（第 1 章 1.8 节的表）",
+      math.exp(0) == 1.0 and round(math.exp(-1), 6) == 0.367879 and round(math.exp(-10), 6) == 0.000045)
+check("σ = √0.1 ≈ 0.316；误差 0.15 ÷ 0.316 ≈ 0.47，不到半个 σ（字面值重算也是 0.47）",
+      round(sigma_lin, 3) == 0.316 and round(err_len / sigma_lin, 2) == 0.47 and round(0.15 / 0.316, 2) == 0.47)
+
 # 同一步里的第二项：动作比上一步变了多少（第 14 章 14.6 节手算过同一个 0.05）
 act_delta = np.zeros(14)
 act_delta[3], act_delta[9] = 0.1, -0.2
@@ -71,13 +85,26 @@ action_cost = float(np.sum(act_delta**2))
 early = action_cost * -0.1 * DT
 late = action_cost * -1.0 * DT
 print(f"  同一步的第二项：动作变化代价 0.1² + (−0.2)² = {num(action_cost, 4)}；"
-      f"权重 −0.1 时 {num(early, 6)}，课程涨到 −1.0 后 {num(late, 6)}")
+      f"权重 −0.1 时 {mn(early, 6)}，课程收紧到 −1.0 后 {mn(late, 6)}")
 check("动作变化代价 0.1² + (−0.2)² = 0.05", round(action_cost, 6) == 0.05)
 check("权重 −0.1：0.05 × (−0.1) × 0.02 = −0.0001", round(early, 6) == -0.0001)
 check("权重 −1.0：同样的动作，扣分变十倍 = −0.001", round(late, 6) == -0.001)
 check("这两项合计 0.031941 − 0.0001 = 0.031841", round(per_step + early, 6) == 0.031841)
+w_lin = round(weighted, 6)   # 1.597032：正文印的那个数
+check("分配律：先各自乘 0.02 再加，和先加 1.597032 − 0.005 = 1.592032 再乘 0.02，都是 0.031841",
+      round(round(0.02 * w_lin, 6) + 0.02 * -0.005, 6) == 0.031841
+      and round(w_lin - 0.005, 6) == 1.592032 and round(0.02 * 1.592032, 6) == 0.031841)
+hz_rows = []
+for hz in (50, 100):
+    hz_rows.append([f"{hz} Hz", hz, round(hz * w_lin * (1 / hz), 6), round(hz * w_lin, 6)])
+table(["控制频率", "一秒几步", "乘了 Δt：这一秒挣多少", "不乘 Δt：这一秒挣多少"], hz_rows, floatfmt=".7g")
+check("乘了 Δt：50 × 1.597032 × 0.02 和 100 × 1.597032 × 0.01 都是 1.597032（换频率，一秒挣的一样）",
+      hz_rows[0][2] == 1.597032 and hz_rows[1][2] == 1.597032)
+check("不乘 Δt：50 × 1.597032 = 79.8516，100 × 1.597032 = 159.7032，翻了一倍",
+      hz_rows[0][3] == 79.8516 and hz_rows[1][3] == 159.7032)
 check("自测：三个差都是 0 时拿满 1 × 2 × 0.02 = 0.04；平方误差和 0.1 时 exp(−1) × 2 × 0.02 = 0.014715",
       round(1.0 * 2 * DT, 6) == 0.04 and round(math.exp(-1) * 2 * DT, 6) == 0.014715)
+check("自测：平方误差和 0.1 = σ² 时，误差长度 √0.1 ≈ 0.316，正好一个 σ", round(math.sqrt(0.1), 3) == 0.316)
 
 # ---------------------------------------------------------------------------
 banner("1b. 画图：figures/ch16_one_term.png（一项奖励从误差到分数的四步）")
@@ -198,6 +225,16 @@ check("名字带 _penalty 不等于自带负号：body_ang_vel 用的是 mjlab �
       R["body_ang_vel"].func.__name__ == "body_angular_velocity_penalty" and R["body_ang_vel"].weight < 0)
 check("自测：函数返回 −0.2、权重写成 −3，乘出来是 +0.6（负负得正，惩罚变奖励）",
       round(-0.2 * -3, 6) == 0.6)
+check("代价那一例：0.01 + 0.04 = 0.05，× (−0.1) = −0.005（16.0 节图里那个数），再 × 0.02 = −0.0001",
+      round(0.01 + 0.04, 6) == 0.05 and round(0.05 * -0.1, 6) == -0.005 and round(-0.005 * DT, 6) == -0.0001)
+check("自负号那一例：(−0.2) × 3 = −0.6，再 × 0.02 = −0.012；0.2 rad ≈ 11.5°",
+      round(-0.2 * 3, 6) == -0.6 and round(-0.6 * DT, 6) == -0.012 and round(math.degrees(0.2), 1) == 11.5)
+grid = [["代价：函数 ≥ 0", 0.05 * -0.1, 0.05 * 0.1], ["自负号惩罚：函数 ≤ 0", -0.2 * -3, -0.2 * 3]]
+table(["函数的写法", "配负权重", "配正权重"], grid, floatfmt=".4g")
+check("四格：−0.005 扣分（对）、+0.005（配错）、+0.6（配错）、−0.6 扣分（对）——只有异号的两格乘出负数",
+      [round(v, 6) for v in (grid[0][1], grid[0][2], grid[1][1], grid[1][2])] == [-0.005, 0.005, 0.6, -0.6]
+      and [v < 0 for v in (grid[0][1], grid[0][2], grid[1][1], grid[1][2])] == [True, False, False, True])
+check("配错时头偏 0.4：(−0.4) × (−3) = +1.2，比偏 0.2 的 +0.6 还多——头越歪分越高", round(-0.4 * -3, 6) == 1.2)
 
 # ---------------------------------------------------------------------------
 banner("3. 六项任务奖励：参数，和每一项的一次手算")
@@ -218,6 +255,13 @@ check("三个钟的 σ² 是 0.1（线速度）、0.5（角速度）、0.05（�
       round(R["track_linear_velocity"].params["std"] ** 2, 4) == 0.1
       and round(R["track_angular_velocity"].params["std"] ** 2, 4) == 0.5
       and round(R["upright"].params["std"] ** 2, 4) == 0.05)
+up_sig2 = R["upright"].params["std"] ** 2
+gx30 = math.sin(math.radians(30))          # 第 2 章 2.4 节：前倾 30° 时，前后那一项是 0.50
+upright30 = math.exp(-(gx30 ** 2) / up_sig2)
+print(f"  站直那一项：前倾 30°，g_x = {num(gx30, 2)}，{num(gx30 ** 2, 2)} ÷ {num(up_sig2, 2)} = {num(gx30 ** 2 / up_sig2, 4)}，"
+      f"打分 exp(−5) = {num(upright30, 6)}")
+check("前倾 30°：0.5² = 0.25，0.25 ÷ 0.05 = 5，e^−5 = 0.006738（几乎 0 分）",
+      round(gx30, 6) == 0.5 and round(gx30 ** 2 / up_sig2, 6) == 5 and round(upright30, 6) == 0.006738)
 check("头部跟踪的 σ 是 0.5（这里配置里直接写 σ，不是 σ²）", R["head_pose_tracking"].params["std"] == 0.5)
 check("腾空窗口是 (0.125, 0.3) 秒，权重 3.0",
       (R["air_time"].params["threshold_min"], R["air_time"].params["threshold_max"],
@@ -259,6 +303,10 @@ check("pose 走路时膝盖的 σ 是 0.4、站着是 0.15（从 cfg 读）",
 check("走着：(0.2/0.4)² = 0.25，除以 10 个关节，exp(−0.025) = 0.97531", round(pose_walk, 5) == 0.97531)
 check("站着：(0.2/0.15)² = 1.777778，除以 10，exp(−0.177778) = 0.837128", round(pose_stand, 6) == 0.837128)
 check("字面值重算：round(exp(−0.025), 5) 就是 0.97531", round(math.exp(-0.025), 5) == 0.97531)
+check("偏了几把尺子：走着 0.2 ÷ 0.4 = 0.5，平方 0.25；站着 0.2 ÷ 0.15 = 1.3333，平方 1.777778；取平均 ÷ 10",
+      round(0.2 / std_walk_knee, 6) == 0.5 and round(0.5 ** 2, 6) == 0.25
+      and round(0.2 / std_stand_knee, 4) == 1.3333 and round((0.2 / std_stand_knee) ** 2, 6) == 1.777778
+      and round(0.25 / 10, 6) == 0.025 and round(1.777778 / 10, 6) == 0.177778)
 
 # head_pose_tracking：4 个钟取平均（部分分），不是相乘（全有或全无）
 head_errs = np.array([0.2, 0.0, 0.0, 0.0])
@@ -272,8 +320,17 @@ check("每个关节 exp(−(0.2/0.5)²) = exp(−0.16) = 0.852144", round(float(
 check("4 个取平均 (0.852144 + 3) / 4 = 0.963036", round(head_mean, 6) == 0.963036)
 check("字面值重算：round((0.852144 + 3) / 4, 6) 还是 0.963036", round((0.852144 + 3) / 4, 6) == 0.963036)
 check("命令拉到 ±1.0 rad 时单关节还剩 exp(−4) = 0.018316（很小，但不是 0）", round(far_one, 6) == 0.018316)
+check("偏了的那个关节：0.2 ÷ 0.5 = 0.4，0.4² = 0.16；四个加起来 0.852144 + 3 = 3.852144",
+      round(0.2 / 0.5, 6) == 0.4 and round(0.4 ** 2, 6) == 0.16 and round(0.852144 + 3, 6) == 3.852144)
+check("0.5 rad ≈ 29°，1.1 rad ≈ 63°（1 rad ≈ 57.3°）", round(math.degrees(0.5)) == 29 and round(math.degrees(1.1)) == 63)
+near_one = math.exp(-((0.9 / 0.5) ** 2))
+print(f"  从 1.0 rad 跟到 0.9 rad：单关节 {num(far_one, 6)} → {num(near_one, 6)}，翻了 {num(near_one / far_one, 2)} 倍")
+check("从 1.0 rad 跟到 0.9 rad：(0.9 ÷ 0.5)² = 3.24，e^−3.24 = 0.039164，比 0.018316 翻了一倍多",
+      round((0.9 / 0.5) ** 2, 6) == 3.24 and round(near_one, 6) == 0.039164 and near_one / far_one > 2)
 check("自测：4 个关节都偏 0.5 rad → 取平均 0.367879，四个相乘 0.018316",
       round(math.exp(-1), 6) == 0.367879 and round(math.exp(-1) ** 4, 6) == 0.018316)
+check("自测：四个 e^−1 相乘就是 e^−4（指数相加），和拉到 1.0 rad 时是同一个数",
+      round(math.exp(-1) ** 4, 6) == round(math.exp(-4), 6) == round(far_one, 6))
 
 # ---------------------------------------------------------------------------
 banner("4. 八项代价：权重，和每一项的一次手算")
@@ -318,6 +375,25 @@ print(f"  软限位 = 量程的中间 {_robot.articulation.soft_joint_pos_limit_
       f"soft_joint_pos_limit_factor = {_robot.articulation.soft_joint_pos_limit_factor}")
 check("软限位是量程的中间 90%：soft_joint_pos_limit_factor = 0.9",
       _robot.articulation.soft_joint_pos_limit_factor == 0.9)
+# 正文的构造例子：一个量程从 −1 到 1 rad 的关节。mjlab 的算法是"中点 ± 半个量程 × 0.9"（第 11 节核对这段源码）
+_f = _robot.articulation.soft_joint_pos_limit_factor
+_lo, _hi = -1.0, 1.0
+_soft = ((_lo + _hi) / 2 - 0.5 * (_hi - _lo) * _f, (_lo + _hi) / 2 + 0.5 * (_hi - _lo) * _f)
+print(f"  量程 [−1, 1] rad 的关节，软限位是 [{mn(_soft[0], 3)}, {mn(_soft[1], 3)}] rad")
+check("量程 −1 到 1 rad 的关节，软限位是 −0.9 到 0.9（手算里的 0.9 就是它）",
+      (round(_soft[0], 6), round(_soft[1], 6)) == (-0.9, 0.9))
+check("第一行：1² + 0.5² = 1 + 0.25 = 1.25，× (−0.05) = −0.0625，再 × 0.02 = −0.00125",
+      round(1 + 0.25, 6) == 1.25 and round(1.25 * -0.05, 6) == -0.0625 and round(-0.0625 * DT, 6) == -0.00125)
+check("脚高 5 mm = 0.005 m，目标 2 cm = 0.02 m，差 0.015 m；0.015 × 0.3 = 0.0045，0.015 × 0.05 = 0.00075，0.3 ÷ 0.05 = 6",
+      round(0.02 - 0.005, 6) == 0.015 and round(0.015 * 0.3, 6) == 0.0045 and round(0.015 * 0.05, 6) == 0.00075
+      and round(0.3 / 0.05, 6) == 6)
+check("落地 10 mm：10 ÷ 20 − 1 = −0.5（差五成）；30 mm：30 ÷ 20 − 1 = 0.5（多五成）；平方都是 0.25",
+      round(10 / 20 - 1, 6) == -0.5 and round(30 / 20 - 1, 6) == 0.5 and round((-0.5) ** 2, 6) == round(0.5 ** 2, 6) == 0.25)
+check("动作 0.10 → 0.20：目标角跳 0.1 rad ≈ 5.73°（0.1 × 57.3）",
+      round(math.degrees(0.1), 2) == 5.73 and round(0.1 * 57.3, 2) == 5.73)
+check("10 N 大约是 1 公斤的东西压在手上的力（10 ÷ 9.8 ≈ 1.02 公斤）", round(10 / 9.8, 2) == 1.02)
+check("自测：权重 −1.0 时 0.05 × (−1.0) = −0.05，再 × 0.02 = −0.001",
+      round(0.05 * -1.0, 6) == -0.05 and round(-0.05 * DT, 6) == -0.001)
 
 import mjlab_microduck.tasks.mdp as microduck_mdp  # noqa: E402
 EXTRA_SMOOTHERS = ["joint_torques_l2", "joint_torque_rate_l2", "joint_accelerations_l2",
@@ -350,16 +426,23 @@ check("head_pose_bias 的课程：第 600 次迭代打开到 1.0，第 1500 次�
 check("action_rate_l2 的课程：−0.1 起步，第 1500 次迭代到 −1.0",
       stages["action_rate_l2"][0]["weight"] == -0.1 and stages["action_rate_l2"][-1]["weight"] == -1.0
       and stages["action_rate_l2"][-1]["step"] // NUM_STEPS_PER_ENV == 1500)
+check("action_rate_l2 的整条阶梯：500 次 −0.2、750 次 −0.4、1000 次 −0.6、1250 次 −0.8、1500 次 −1.0",
+      [(s["step"] // NUM_STEPS_PER_ENV, s["weight"]) for s in stages["action_rate_l2"]]
+      == [(0, -0.1), (500, -0.2), (750, -0.4), (1000, -0.6), (1250, -0.8), (1500, -1.0)])
 
 # ---------------------------------------------------------------------------
 banner("6. 血泪教训里的数：钻空子、头奖、折中姿势、相对大小、罚不掉的税")
-# 第 1 条：只盯一件事的项会被钻空子——原地抬脚照样拿满 air_time，是速度那一项把它拉回来
+# 第 1 条：只盯一件事的项会被钻空子——原地踏步照样在腾空窗口里拿 air_time，是速度那一项把它拉回来
 std_sq_from_cfg = R["track_linear_velocity"].params["std"] ** 2
 stand_still = math.exp(-(0.3**2) / std_sq_from_cfg)
-print(f"  第 1 条：原地把脚抬 0.2 秒也在腾空窗口里，air_time 照样满额 {KERNEL_MAX_AIR} 分；"
+air_lo, air_hi = R["air_time"].params["threshold_min"], R["air_time"].params["threshold_max"]
+print(f"  第 1 条：原地踏步、每只脚离地 0.2 秒——{air_lo} < 0.2 < {air_hi}，在腾空窗口里，air_time 照样给分；"
       f"但命令 0.3 m/s 却原地不动时，速度那一项只剩 exp(−0.09 / {num(std_sq_from_cfg, 1)}) = {num(stand_still, 4)}")
+check("原地踏步每只脚离地 0.2 秒：0.125 < 0.2 < 0.3，落在腾空窗口里（air_time 只看计时）", air_lo < 0.2 < air_hi)
 check("原地不动、命令 0.3 m/s：E = 0.09，exp(−0.9) = 0.4066（第 1 章 1.10 节那张表里就是这个数）",
       round(stand_still, 4) == 0.4066)
+check("0.09 ÷ 0.1 = 0.9；比满分少 1 − 0.4066 = 0.5934，乘权重 2 是每步少 1.1868（未乘 0.02）",
+      round(0.3**2 / std_sq_from_cfg, 6) == 0.9 and round(1 - 0.4066, 4) == 0.5934 and round(0.5934 * 2, 4) == 1.1868)
 # 第 2 条：头奖的账——早到赚的是每一步的钱，限速罚款是一笔有限的钱
 jackpot = 50 * 0.02
 speed_fine = 50 * 0.001
@@ -367,6 +450,13 @@ print(f"  第 2 条：早到 1 秒（50 步）白赚 50 × 0.02 = {num(jackpot, 
       f"冲刺那 50 步的限速罚款一共才 50 × 0.001 = {num(speed_fine, 2)} 分，差 {round(jackpot / speed_fine)} 倍")
 check("头奖：早到 50 步多赚 1 分，限速罚款只有 0.05 分，相差 20 倍",
       round(jackpot, 6) == 1.0 and round(speed_fine, 6) == 0.05 and round(jackpot / speed_fine, 6) == 20)
+check("1 秒 = 1 ÷ 0.02 = 50 步；回合还剩 500 步就是 500 × 0.02 = 10 分", round(1 / DT) == 50 and round(500 * 0.02, 6) == 10)
+# 第 4 条：同样幅度，分几步慢慢做，平方和小得多
+one_shot = 0.4**2
+four_steps = 4 * 0.1**2
+print(f"  第 4 条：动作要变 0.4，一步变完代价 {num(one_shot, 4)}；分 4 步每步 0.1，代价 {num(four_steps, 4)}")
+check("一步变完 0.4² = 0.16；分 4 步 4 × 0.1² = 0.04，便宜 4 倍",
+      round(one_shot, 6) == 0.16 and round(four_steps, 6) == 0.04 and round(one_shot / four_steps, 6) == 4)
 add_all = (0.8 * 4) / 4
 mul_all = 0.8**4
 add_one_zero = (0.8 * 3 + 0.0) / 4
@@ -377,13 +467,21 @@ table(["四项各自的分", "加起来取平均", "四项相乘"],
 check("加法：每项 0.8 的折中姿势能拿 0.8；一项归零还能拿 0.6",
       round(add_all, 6) == 0.8 and round(add_one_zero, 6) == 0.6)
 check("乘法：0.8⁴ = 0.4096；一项归零，总分直接是 0", round(mul_all, 6) == 0.4096 and mul_one_zero == 0.0)
+check("0.8⁴ 分两步算：0.8 × 0.8 = 0.64，0.64 × 0.64 = 0.4096", round(0.8 * 0.8, 6) == 0.64 and round(0.64 * 0.64, 6) == 0.4096)
+tiny_all = 0.01**4
+tiny_one_up = 0.01**3 * 0.02
+print(f"  每项只有 0.01 分：四个相乘 {tiny_all:.0e}；一项进步到 0.02，乘积 {tiny_one_up:.0e}，只多 {tiny_one_up - tiny_all:.0e}")
+check("0.01⁴ = 0.00000001；一项进步到 0.02，乘积 0.00000002，只多 0.00000001",
+      round(tiny_all, 12) == 0.00000001 and round(tiny_one_up, 12) == 0.00000002
+      and round(tiny_one_up - tiny_all, 12) == 0.00000001)
 
 small_stack, big_stack = 0.3, 1.2
 share_small = 0.005 / small_stack
 share_big = 0.005 / big_stack
 print(f"  同一笔 0.005 的扣分：任务项每步共 {small_stack} 分时占 1/60 ≈ {num(share_small, 6)}；"
       f"共 {big_stack} 分时占 1/240 ≈ {num(share_big, 6)}")
-check("同一个权重，在 4 倍大的正分堆里只有 1/4 的分量", round(share_small / share_big, 6) == 4)
+check("同一个权重，在 4 倍大的正分堆里只有 1/4 的分量（0.3 × 4 = 1.2）",
+      round(share_small / share_big, 6) == 4 and round(small_stack * 4, 6) == big_stack)
 check("1/60 ≈ 0.016667，1/240 ≈ 0.004167", round(share_small, 6) == 0.016667 and round(share_big, 6) == 0.004167)
 print("  罚不掉的税：走路时头必然摆（第 1 章 1.14 节说的“改得掉吗”），cfg 注释里记着 fine_std = 0.1 那次"
       "每步要收 0.77 分，而当时 air_time 每步实际只拿到 1.01 分（这一项的上限是 6，见第 9 节）")
@@ -411,6 +509,28 @@ check("平方：误差 0.1 → 0.2，代价 0.01 → 0.04，翻 4 倍", round(0.
 check("绝对值：同样的变化只翻 2 倍", round(0.2 / 0.1, 6) == 2)
 check("钟形（σ² = 0.1）：0.1 得 0.904837，0.2 得 0.670320——和第 1 章 1.10 节那张表同一组数",
       round(math.exp(-0.01 / 0.1), 6) == 0.904837 and round(math.exp(-0.04 / 0.1), 6) == 0.670320)
+check("钟形是给分：误差从 0.1 到 0.2，分数少了 0.904837 − 0.670320 = 0.234517", round(0.904837 - 0.670320, 6) == 0.234517)
+check("误差 2：平方 4、绝对值 2——超过 1 以后平方反超", 2**2 == 4 and abs(-2) == 2 and 2**2 > abs(2))
+
+# 六种核，代进同样两个数 0.1、0.2（后三种各自说明这个数代表什么）
+SOFT_Q = 0.9                      # 16.4 节构造的那个关节：软限位 ±0.9 rad
+FOOT_V = 0.3                      # 16.4 节的脚速 0.3 m/s
+XS = (0.1, 0.2)
+KERNELS = {
+    "平方 err²": [x * x for x in XS],
+    "绝对值 |err|": [abs(x) for x in XS],
+    "钟形 exp(−err²/0.1)": [math.exp(-x * x / 0.1) for x in XS],
+    f"方盒子（x = 离地秒数，窗口 {air_lo}–{air_hi}）": [1.0 if air_lo < x < air_hi else 0.0 for x in XS],
+    "铰链 max(0, |x| − 0.9)（x = 关节角）": [max(0.0, abs(x) - SOFT_Q) for x in XS],
+    "距离 × 速度 |x| × 0.3（x = 离目标高度）": [abs(x) * FOOT_V for x in XS],
+}
+table(["核", "代进 0.1", "代进 0.2"], [[k, v[0], v[1]] for k, v in KERNELS.items()], floatfmt=".6g")
+check("代进 0.2，六种核开出六个价：0.04、0.2、0.670320、1、0、0.06",
+      [round(v[1], 6) for v in KERNELS.values()] == [0.04, 0.2, 0.670320, 1.0, 0.0, 0.06])
+check("代进 0.1：0.01、0.1、0.904837、0（还不到 0.125 秒）、0（在软限位以内）、0.03",
+      [round(v[0], 6) for v in KERNELS.values()] == [0.01, 0.1, 0.904837, 0.0, 0.0, 0.03])
+check("铰链要到 0.92 才收 0.92 − 0.9 = 0.02；距离 × 速度在脚速 0 时一律 0",
+      round(max(0.0, 0.92 - SOFT_Q), 6) == 0.02 and all(abs(x) * 0.0 == 0.0 for x in XS))
 
 combos = [("平方误差和直接取指数（= 每项的钟相乘）", math.exp(-(0 + 1))),
           ("先把平方误差平均，再取指数", math.exp(-(0 + 1) / 2)),
@@ -418,6 +538,10 @@ combos = [("平方误差和直接取指数（= 每项的钟相乘）", math.exp(
 table(["两项误差是 0 和 σ 时，.mean() 放哪一行", "总分"], [[k, v] for k, v in combos], floatfmt=".6g")
 check("三种写法给出三个不同的数：0.367879、0.606531、0.683940",
       [round(v, 6) for _, v in combos] == [0.367879, 0.606531, 0.683940])
+check("第一种 = 每项的钟相乘：e^−0 × e^−1 = e^−(0+1)（数相乘，指数相加）",
+      math.isclose(math.exp(-0) * math.exp(-1), math.exp(-(0 + 1))))
+check("第二种 = 几何平均：√(1 × 0.367879) ≈ 0.6065，和 0.606531 是同一个数",
+      round(math.sqrt(1 * 0.367879), 4) == 0.6065 and round(combos[1][1], 4) == 0.6065)
 check("自测：代价 0.1 时误差翻倍 → 平方核变 0.4，绝对值核变 0.2",
       round(0.1 * 2**2, 6) == 0.4 and round(0.1 * 2, 6) == 0.2)
 
@@ -511,6 +635,52 @@ check(f"tau_s = {TAU_S} 秒与 cfg 里 head_pose_bias 的参数对得上", R["he
 alpha = min(1.0, DT / TAU_S)
 print(f"  α = 一步 {DT} 秒 ÷ {TAU_S} 秒 = {num(alpha, 4)}；旧值留 {num(1 - alpha, 4)}（第 7 章 7.4 节的滑动平均）")
 
+# 事故：σ = 0.5 的宽钟对 10° 的下垂几乎不收钱；σ = 0.1 的窄钟几乎全扣
+check("15° ≈ 0.26 rad（15 ÷ 57.3）", round(math.radians(15), 2) == 0.26 and round(15 / 57.3, 2) == 0.26)
+sag10 = 1 - (math.exp(-((math.radians(10) / 0.5) ** 2)) + 3) / 4
+print(f"  为什么不直接把 head_pose_tracking 调严：一个关节下垂 10°（{math.radians(10):.4f} rad），"
+      f"4 个取平均后一共只掉 {num(sag10, 4)} 分")
+check("下垂 10° 只掉 0.0287 分——配置注释里说的“几乎免费”", round(sag10, 4) == 0.0287)
+check("手算链：10 ÷ 57.3 = 0.1745 rad；(0.1745 ÷ 0.5)² = 0.349² = 0.1218；e^−0.1218 = 0.8853；1 − 0.8853 = 0.1147；÷ 4 = 0.0287",
+      round(math.radians(10), 4) == 0.1745 and round(10 / 57.3, 4) == 0.1745 and round(0.1745 / 0.5, 4) == 0.349
+      and round(0.349**2, 4) == 0.1218 and round(math.exp(-0.1218), 4) == 0.8853
+      and round(1 - 0.8853, 4) == 0.1147 and round(0.1147 / 4, 4) == 0.0287)
+narrow10 = math.exp(-((0.1745 / 0.1) ** 2))
+print(f"  叠一口 σ = 0.1 的窄钟：同样下垂 10°，(0.1745 ÷ 0.1)² = {num((0.1745 / 0.1) ** 2, 3)}，"
+      f"这口钟只给 {num(narrow10, 4)} 分")
+check("窄钟：(0.1745 ÷ 0.1)² = 3.045，e^−3.045 = 0.0476（几乎一分不给）",
+      round((0.1745 / 0.1) ** 2, 3) == 3.045 and round(math.exp(-3.045), 4) == 0.0476 and round(narrow10, 4) == 0.0476)
+
+# 办法一：先平均再取绝对值
+swing = np.array([0.2, -0.2, 0.2, -0.2])
+print(f"  走路时头来回摆 [{', '.join(num(v, 1) for v in swing)}]：先平均再取绝对值 = {num(abs(swing.mean()), 4)}；"
+      f"先取绝对值再平均 = {num(np.abs(swing).mean(), 4)}")
+check("来回摆：先平均再取绝对值是 0（罚不到），先取绝对值再平均是 0.2（罚得到）",
+      round(abs(float(swing.mean())), 6) == 0.0 and round(float(np.abs(swing).mean()), 6) == 0.2)
+mixed = np.array([-0.3, 0.1, -0.3, 0.1])          # 一直低 0.1，再叠上 ±0.2 的摆动
+m_mean, m_abs = float(mixed.mean()), float(np.abs(mixed).mean())
+m_sq, m_var = float((mixed**2).mean()), float(mixed.var())   # np.var 除以个数 n，和第 4 章 4.4 节手算一样
+print(f"  又摆又偏 [{', '.join(mn(v, 1) for v in mixed)}]：先平均再取绝对值 = {num(abs(m_mean), 4)}；先取绝对值再平均 = {num(m_abs, 4)}；"
+      f"平方的平均 {num(m_sq, 4)} = 平均的平方 {num(m_mean**2, 4)} + 方差 {num(m_var, 4)}")
+check("又摆又偏：平均 −0.4 ÷ 4 = −0.1，绝对值 0.1 正是'一直低着'的那部分；先取绝对值再平均是 0.2",
+      round(m_mean, 6) == -0.1 and round(-0.4 / 4, 6) == -0.1 and round(m_abs, 6) == 0.2)
+check("第 4 章 4.4 节：平方的平均 0.05 = 平均的平方 0.01 + 方差 0.04；摆动占 0.04 ÷ 0.05 = 八成",
+      round(m_sq, 6) == 0.05 and round(m_mean**2, 6) == 0.01 and round(m_var, 6) == 0.04
+      and round(0.01 + 0.04, 6) == 0.05 and round(0.04 / 0.05, 6) == 0.8)
+
+# 办法二：滑动平均。α = 第 7 章 7.4 节的 1 − β
+beta = 1 - alpha
+memory_steps = 1 / (1 - beta)
+recent_share = 1 - beta ** round(memory_steps)
+print(f"  β = 1 − α = {num(beta, 4)}：记得最近 1 ÷ (1 − β) = {num(memory_steps, 2)} 步 = {num(memory_steps * DT, 2)} 秒，"
+      f"这几步合起来占 {num(recent_share, 5)}")
+check("1 − α = 0.98 就是第 7 章 7.4 节的 β；记性 1 ÷ 0.02 = 50 步，50 × 0.02 = 1 秒",
+      round(beta, 6) == 0.98 and round(memory_steps, 6) == 50 and round(memory_steps * DT, 6) == 1.0)
+check("最近 50 步占 1 − 0.98⁵⁰ = 1 − 0.36417 = 0.63583，约三分之二（7.4 节的 0.651、0.632 同一个规律）",
+      round(recent_share, 5) == 0.63583 and round(1 - 0.36417, 5) == 0.63583
+      and round(1 - 0.9**10, 3) == 0.651 and round(1 - 0.999**1000, 3) == 0.632)
+check("α = 一步的秒数 ÷ 想记住的秒数：记 0.2 秒就是 0.02 ÷ 0.2 = 0.1", round(DT / 0.2, 6) == 0.1)
+
 bias = 0.2
 ema, first_two = 0.0, []
 for k in range(50):
@@ -521,36 +691,55 @@ closed = bias * (1 - (1 - alpha) ** 50)
 print(f"  头一直低 {bias} rad：第 1 步 EMA = {num(first_two[0], 5)}，第 2 步 = {num(first_two[1], 5)}，"
       f"第 50 步 = {num(ema, 6)}")
 check("第 1 步 0.98 × 0 + 0.02 × 0.2 = 0.004", round(first_two[0], 6) == 0.004)
-check("第 2 步 0.98 × 0.004 + 0.004 = 0.00792", round(first_two[1], 6) == 0.00792)
-check("第 50 步 = 0.2 × (1 − 0.98⁵⁰) = 0.127166（递推 = 几何级数）",
+check("第 2 步 0.98 × 0.004 + 0.02 × 0.2 = 0.00392 + 0.004 = 0.00792",
+      round(first_two[1], 6) == 0.00792 and round(0.98 * 0.004, 6) == 0.00392)
+check("第 50 步 = 0.2 × (1 − 0.98⁵⁰) = 0.127166（递推 = 份额算法 = 几何级数）",
       math.isclose(ema, closed, rel_tol=1e-12) and round(ema, 6) == 0.127166)
-check("0.98⁵⁰ = 0.36417：一秒之前的那一步还剩三成多的分量", round(0.98**50, 5) == 0.36417)
-check("字面值重算：round(0.2 × (1 − 0.36417), 6) 还是 0.127166", round(0.2 * (1 - 0.36417), 6) == 0.127166)
+check("0.98⁵⁰ = 0.36417：起步时那个假的 0，50 步后还占三成多的份额", round(0.98**50, 5) == 0.36417)
+check("字面值重算：0.2 × (1 − 0.36417) = 0.2 × 0.63583 = 0.127166",
+      round(0.2 * (1 - 0.36417), 6) == 0.127166 and round(0.2 * 0.63583, 6) == 0.127166)
+check("拿式子核对前两步：0.2 × (1 − 0.98) = 0.004；0.98² = 0.9604，0.2 × 0.0396 = 0.00792",
+      round(0.2 * (1 - 0.98), 6) == 0.004 and round(0.98**2, 4) == 0.9604
+      and round(1 - 0.9604, 4) == 0.0396 and round(0.2 * 0.0396, 6) == 0.00792)
+check("两秒以前的旧账还占 0.98¹⁰⁰ ≈ 0.13（所以回合一重置就要清零）", round(0.98**100, 2) == 0.13)
+check("进阶折叠：n = 3 时 S = 1 + 0.98 + 0.9604 = 2.9404；0.98³ = 0.941192；(1 − 0.941192) ÷ 0.02 = 2.9404",
+      round(1 + 0.98 + 0.9604, 4) == 2.9404 and round(0.98**3, 6) == 0.941192
+      and round(1 - 0.941192, 6) == 0.058808 and round(0.058808 / 0.02, 4) == 2.9404 and round(0.004 / 0.02, 6) == 0.2)
 
-sag10 = 1 - (math.exp(-((math.radians(10) / 0.5) ** 2)) + 3) / 4
-print(f"  为什么不直接把 head_pose_tracking 调严：一个关节下垂 10°（{math.radians(10):.4f} rad），"
-      f"4 个取平均后一共只掉 {num(sag10, 4)} 分")
-check("下垂 10° 只掉 0.0287 分——配置注释里说的“几乎免费”", round(sag10, 4) == 0.0287)
-
-swing = np.array([0.2, -0.2, 0.2, -0.2])
-print(f"  走路时头来回摆 [{', '.join(num(v, 1) for v in swing)}]：先平均再取绝对值 = {num(abs(swing.mean()), 4)}；"
-      f"先取绝对值再平均 = {num(np.abs(swing).mean(), 4)}")
-check("来回摆：先平均再取绝对值是 0（罚不到），先取绝对值再平均是 0.2（罚得到）",
-      round(abs(float(swing.mean())), 6) == 0.0 and round(float(np.abs(swing).mean()), 6) == 0.2)
 HALF = 10          # 半个步态周期 = 10 步 = 0.2 秒（腾空窗口 0.125–0.3 秒量级）
 ema_swing, peak = 0.0, 0.0
 for k in range(1000):
     ema_swing = (1 - alpha) * ema_swing + alpha * (bias * (1 if (k // HALF) % 2 == 0 else -1))
     if k > 500:
         peak = max(peak, abs(ema_swing))
+q_half = (1 - alpha) ** HALF
+peak_closed = bias * (1 - q_half) / (1 + q_half)       # 进阶折叠：a = 0.81707 × (−a) + 0.18293 × 0.2
 print(f"  换成 ±{bias} rad、0.4 秒一个来回的摆动：EMA 稳定下来只在 ±{num(peak, 4)} 之间晃，"
-      f"约为持续偏置 {num(ema, 6)} 的六分之一")
+      f"约为持续偏置 {num(ema, 6)} 的六分之一；式子给 {num(peak_closed, 4)}")
 check("来回摆动的 1 秒平均稳定在 ±0.0201，只有持续偏置 0.127166 的六分之一", round(peak, 4) == 0.0201)
+check(f"进阶折叠的式子 a = 0.2 × (1 − q) ÷ (1 + q)，q = (1 − α)^10，给出 {num(peak_closed, 4)}，和逐步模拟一致",
+      math.isclose(peak, peak_closed, rel_tol=1e-3))
+check("字面值：0.98¹⁰ = 0.81707，1 − 0.81707 = 0.18293，0.18293 × 0.2 = 0.036586，1 + 0.81707 = 1.81707，0.036586 ÷ 1.81707 = 0.0201",
+      round(0.98**10, 5) == 0.81707 and round(1 - 0.81707, 5) == 0.18293 and round(0.18293 * 0.2, 6) == 0.036586
+      and round(1 + 0.81707, 5) == 1.81707 and round(0.036586 / 1.81707, 4) == 0.0201)
 bias_pay = -0.127166 * 3.0 * DT
 print(f"  课程把权重涨到 3.0 之后，持续低头 0.2 rad 每步扣 {num(bias_pay, 6)} 分")
 check("(−0.127166) × 3 × 0.02 = −0.00763", round(bias_pay, 5) == -0.00763)
+check("(−0.127166) × 3 = −0.381498；账面爬满到 0.2 以后是 (−0.2) × 3 × 0.02 = −0.012",
+      round(-0.127166 * 3, 6) == -0.381498 and round(-0.2 * 3 * DT, 6) == -0.012)
+check("摆动最多付 0.0201 × 3 × 0.02 = 0.001206，约是 0.00763 的六分之一",
+      round(0.0201 * 3 * DT, 6) == 0.001206 and round(0.00763 / 0.001206) == 6)
 check("自测：α 换成 0.1（平均 0.2 秒）时第 1 步是 0.02，是 α = 0.02 时 0.004 的 5 倍",
       round(0.9 * 0 + 0.1 * bias, 6) == 0.02 and round(0.02 / 0.004, 6) == 5)
+peak_01 = bias * (1 - 0.9**HALF) / (1 + 0.9**HALF)
+ema01, peak01_sim = 0.0, 0.0
+for k in range(1000):
+    ema01 = 0.9 * ema01 + 0.1 * (bias * (1 if (k // HALF) % 2 == 0 else -1))
+    if k > 500:
+        peak01_sim = max(peak01_sim, abs(ema01))
+print(f"  自测：α = 0.1 时同样的摆动，账面在 ±{num(peak_01, 4)} 之间晃（逐步模拟 ±{num(peak01_sim, 4)}）")
+check("自测：α = 0.1 时摆动的账在 ±0.0966 之间晃，差不多是 ±0.0201 的 5 倍",
+      round(peak_01, 4) == 0.0966 and math.isclose(peak_01, peak01_sim, rel_tol=1e-3) and round(0.0966 / 0.0201) == 5)
 
 # ---------------------------------------------------------------------------
 banner("8b. 画图：figures/ch16_head_bias_ema.png（摆动被平均掉，偏置留下来）")
@@ -625,6 +814,18 @@ check("跑满 20 秒且每步满分时，Episode_Reward 的读数 = 权重 × �
 alt = sum((1.0 if n == "air_time" else R[n].weight) * KERNEL_MAX[n] * DT * STEPS_20S for n in TASK_TERMS)
 check("自测：air_time 的权重改成 1，六项合计 220 分，迈步只占 18%",
       round(alt, 6) == 220.0 and round(1.0 * 2 * DT * STEPS_20S / alt, 2) == 0.18)
+max_per_step = [round(r[3], 6) for r in rows]
+print(f"  一项一项：每步最多 {' + '.join(num(p, 2) for p in max_per_step)} = {num(sum(max_per_step), 2)} 分；"
+      f"权重 × 核最大值加起来 {num(sum(r[1] * r[2] for r in rows), 1)}，再乘 0.02 × 1000 = {num(DT * STEPS_20S, 1)}")
+check("每步最多依次是 0.04、0.04、0.04、0.02、0.12、0.04，加起来 0.3；0.3 × 1000 = 300",
+      max_per_step == [0.04, 0.04, 0.04, 0.02, 0.12, 0.04] and round(sum(max_per_step), 6) == 0.3 and round(0.3 * 1000, 6) == 300)
+check("另一条路：权重 × 核最大值加起来 15，0.02 × 1000 = 20（正好一回合 20 秒），15 × 20 = 300",
+      round(sum(r[1] * r[2] for r in rows), 6) == 15 and round(DT * STEPS_20S, 6) == 20
+      and round(DT * STEPS_20S, 6) == cfg.episode_length_s and 15 * 20 == 300)
+check("六项的回合上界 40 + 40 + 40 + 20 + 120 + 40 = 300；读数 40 ÷ 20 = 2、120 ÷ 20 = 6",
+      [round(r[4], 6) for r in rows] == [40, 40, 40, 20, 120, 40] and 40 / 20 == 2 and 120 / 20 == 6)
+check("速度跟踪占 40 ÷ 300 ≈ 13%；同样涨 0.1，pose（读数最多 1）是满分的 1/10，air_time（最多 6）只是 1/60",
+      round(40 / total, 2) == 0.13 and round(0.1 / 1, 6) == 0.1 and round(0.1 / (W_AIR * 2), 6) == round(1 / 60, 6))
 
 # ---------------------------------------------------------------------------
 banner("9b. 画图：figures/ch16_score_budget.png（300 分是怎么分的）")
@@ -652,7 +853,7 @@ savefig(fig, "ch16_score_budget")
 plt.close(fig)
 
 # ---------------------------------------------------------------------------
-banner("10. 只付进步的钱：望远镜相消，和裁成 0 之后的刷分")
+banner("10. 只付进步的钱：望远镜消去，和裁成 0 之后的刷分")
 phi = {60: math.cos(math.radians(60)), 30: math.cos(math.radians(30)), 0: 1.0}
 print(f"  进度分 Φ = cos(倾角)：60° → {num(phi[60], 3)}，30° → {num(phi[30], 3)}，0° → {num(phi[0], 3)}")
 up1 = round(phi[30], 3) - round(phi[60], 3)
@@ -662,9 +863,29 @@ check("Φ(60°) = 0.5，Φ(30°) = 0.866，Φ(0°) = 1",
 check("一路站起来：0.366 + 0.134 = 0.5 = 终点 Φ − 起点 Φ（中间项相消）",
       round(up1, 3) == 0.366 and round(up2, 3) == 0.134 and round(up1 + up2, 3) == 0.5)
 check("来回摆 60° ↔ 30°，简单差分一涨一落加起来是 0", round(up1 + (-up1), 6) == 0.0)
+check("去掉括号：(0.866 − 0.5) + (1 − 0.866) = −0.5 + 0.866 − 0.866 + 1 = −0.5 + 1 = 0.5",
+      round(-0.5 + 0.866 - 0.866 + 1, 6) == 0.5 and round(-0.5 + 1, 6) == 0.5)
+# 绕远路：60° → 30° → 60° → 30° → 0°，一行一行摆开，看错开一行的 Φ 一正一负地消掉
+path = [60, 30, 60, 30, 0]
+after = [round(phi[b], 3) for b in path[1:]]
+before = [round(phi[a], 3) for a in path[:-1]]
+f_steps = [round(x - y, 3) for x, y in zip(after, before)]
+table(["这一步", "+ 这一步之后的 Φ", "− 这一步之前的 Φ", "这一笔 F"],
+      [[f"{a}° → {b}°", x, -y, f] for (a, b), x, y, f in zip(zip(path[:-1], path[1:]), after, before, f_steps)]
+      + [["竖着加", round(sum(after), 3), -round(sum(before), 3), round(sum(f_steps), 3)]], floatfmt=".4g")
+check("绕远路四笔：+0.366、−0.366、+0.366、+0.134；三列竖着加 3.232、−2.732、0.5——还是终点 1 减起点 0.5",
+      f_steps == [0.366, -0.366, 0.366, 0.134] and round(sum(after), 3) == 3.232 and round(sum(before), 3) == 2.732
+      and round(sum(f_steps), 3) == 0.5 and round(3.232 - 2.732, 3) == 0.5)
+check("每一行'之后的 Φ'正是下一行'之前的 Φ'（错开一行，一正一负）", after[:-1] == before[1:])
+check("站着不动：0.866 − 0.866 = 0，在 30° 站 50 步还是 0；要是每步直接付 Φ，50 × 0.866 = 43.3",
+      round(phi[30] - phi[30], 6) == 0.0 and round(50 * 0.866, 6) == 43.3)
 farm = 10 * up1
 print(f"  把下降的差分裁成 0，只留上涨的：摆 10 个来回白拿 {num(farm, 3)} 分，比站起来的 0.5 分还多")
 check("裁成 0 之后，10 个来回能刷 3.66 分", round(farm, 3) == 3.66)
+check("3.66 ÷ 0.5 = 7.32：是老实站起来的 7 倍还多", round(3.66 / 0.5, 2) == 7.32)
+cos70 = math.cos(math.radians(70))
+check("重置那一跳：摔倒判据 70° 时 Φ = cos 70° = 0.342，新回合站直 Φ = 1，跳了 1 − 0.342 = 0.658",
+      round(cos70, 3) == 0.342 and round(1 - 0.342, 3) == 0.658)
 up_full = phi[0] - round(phi[60], 3)
 check("自测：60°→0°→60°→0°，不裁的差分合计 0.5；把下降裁成 0 就变成 1.0",
       round(up_full + (-up_full) + up_full, 3) == 0.5 and round(up_full + 0 + up_full, 3) == 1.0)
@@ -682,6 +903,24 @@ check("0.99 × 0.866 − 0.5 = 0.35734", f1 == 0.35734)
 check("0.99 × 1 − 0.866 = 0.124", f2 == 0.124)
 check("0.35734 + 0.99 × 0.124 = 0.4801 = 0.9801 − 0.5（带折扣也相消）",
       total_disc == 0.4801 and closed_disc == 0.4801)
+check("字面值：0.99 × 0.124 = 0.12276，0.35734 + 0.12276 = 0.4801",
+      round(0.99 * 0.124, 5) == 0.12276 and round(0.35734 + 0.12276, 4) == 0.4801)
+check("不改写法、只给第二笔打折：0.99 × 0.866 = 0.85734，和 0.866 差 0.00866，抵不干净（合计 0.49866）",
+      round(0.99 * 0.866, 5) == 0.85734 and round(0.866 - 0.85734, 5) == 0.00866
+      and round((0.866 - 0.5) + 0.99 * (1 - 0.866), 5) == 0.49866)
+check("改写法后摆开：0.99 × 0.866 − 0.5 + 0.9801 × 1 − 0.99 × 0.866 = 0.4801（0.99 × 0.866 一正一负）",
+      round(0.99 * 0.866 - 0.5 + 0.9801 * 1 - 0.99 * 0.866, 4) == 0.4801 and round(0.99 * 0.99, 4) == 0.9801)
+check("带折扣时原地不动：0.99 × 0.866 − 0.866 = −0.00866，略小于 0", round(GAMMA * 0.866 - 0.866, 5) == -0.00866)
+# 终止时结清：终止之后的 Φ 记 0（第 9 章 9.6 节：终止之后一律按 0 算）
+settle_a = (1.0 - 0.5) + (0.0 - 1.0)          # 从 60° 站直，再一路摔倒、终止
+settle_b = 0.0 - 0.5                          # 从 60° 直接摔倒、终止
+check("结清以后：先站直再摔倒是 0.5 + (0 − 1) = −0.5，直接摔倒是 0 − 0.5 = −0.5——总额都是 −Φ(起点)",
+      round(settle_a, 6) == -0.5 and round(settle_b, 6) == -0.5)
+mdp_text = Path(microduck_mdp.__file__).read_text(encoding="utf-8")
+check("项目的 upright_progress（mdp.py）在重置时把'上一步的 Φ'换成新起点，再算差分",
+      lines_in_order(mdp_text, ["def upright_progress(", "fresh = env.episode_length_buf <= 1",
+                                "env._upright_potential_prev[fresh] = cos_tilt[fresh]",
+                                "delta = cos_tilt - env._upright_potential_prev"]))
 
 # ---------------------------------------------------------------------------
 banner("11. 映射到项目：正文引用的常数和源码行还在不在")
@@ -702,6 +941,9 @@ CFG_LINES = [
     'params={"command_name": "head_pose", "tau_s": 1.0},',
 ]
 MDP_LINES = [
+    "def head_pose_bias_penalty(",
+    "fresh = env.episode_length_buf <= 1",
+    "env._head_bias_ema[fresh] = 0.0",
     "alpha = min(1.0, float(env.step_dt) / max(tau_s, 1e-6))",
     "env._head_bias_ema = (1.0 - alpha) * env._head_bias_ema + alpha * err",
     "out = -env._head_bias_ema.abs().mean(dim=-1)",
@@ -718,7 +960,8 @@ check("16 项分在三个文件里：mjlab 走路模板 11 项、mjlab 通用 2 
 cfg_src = (REPO / "src" / "mjlab_microduck" / "tasks" / "microduck_velocity_env_cfg.py").read_text(encoding="utf-8")
 mdp_src = (REPO / "src" / "mjlab_microduck" / "tasks" / "mdp.py").read_text(encoding="utf-8")
 check("microduck_velocity_env_cfg.py 里的权重和 std 还是正文引用的那几行", lines_in_order(cfg_src, CFG_LINES))
-check("mdp.py 的 head_pose_bias_penalty 还是正文引用的三行", lines_in_order(mdp_src, MDP_LINES))
+check("mdp.py 的 head_pose_bias_penalty 还是正文引用的五行（回合开头清零两行 + 记账出分三行）",
+      lines_in_order(mdp_src, MDP_LINES))
 
 try:
     import mjlab
@@ -735,8 +978,21 @@ try:
                                   "def feet_air_time(", "def feet_clearance(", "def feet_slip("]))
     check("action_rate_l2 和 joint_pos_limits 还在 mjlab/envs/mdp/rewards.py 里",
           lines_in_order(base_src, ["def action_rate_l2(", "def joint_pos_limits("]))
+    # 16.3 节迈步那一项的计时规矩：每一步看"这一次已经离地多久"，命令 = 前后左右的大小 + 转向的大小
+    cs_src = (pkg / "sensor" / "contact_sensor.py").read_text(encoding="utf-8")
+    ent_src = (pkg / "entity" / "entity.py").read_text(encoding="utf-8")
+    check("feet_air_time 每一步看 current_air_time 在不在窗口里；命令速度 = 前后左右的大小 + 转向的大小",
+          lines_in_order(rw_src, ["def feet_air_time(", "current_air_time = sensor_data.current_air_time",
+                                  "in_range = (current_air_time > threshold_min) & (current_air_time < threshold_max)",
+                                  "total_command = linear_norm + angular_norm"]))
+    check("离地计时：没着地就一直往上加，一着地就归零（contact_sensor.py）",
+          lines_in_order(cs_src, ["state.current_air_time[:] = torch.where(", "~is_contact,",
+                                  "state.current_air_time + elapsed_time,", "torch.zeros_like(state.current_air_time),"]))
+    check("软限位 = 量程中点 ± 半个量程 × 0.9（entity.py）",
+          lines_in_order(ent_src, ["joint_pos_mean - 0.5 * joint_pos_range * soft_limit_factor,",
+                                   "joint_pos_mean + 0.5 * joint_pos_range * soft_limit_factor,"]))
 except (ImportError, FileNotFoundError):
-    print("  找不到 mjlab 包，跳过这三条源码核对（装好依赖后重跑即可）。")
+    print("  找不到 mjlab 包，跳过这几条源码核对（装好依赖后重跑即可）。")
 
 # ---------------------------------------------------------------------------
 if "--env" in sys.argv:

@@ -156,6 +156,14 @@ check("冒烟：120 个环境步、2.4 秒仿真时间、480 个物理步、100 
       and SMOKE["phys_steps"] == 120 * 4 == 480 and SMOKE["updates"] == 5 * 20 == 100)
 check("冒烟：64 × 120 = 7680 条记录——和存档日志的 Total steps 是同一个数",
       SMOKE["records"] == 64 * 120 == 7680 == int(ARCHIVE["Total steps"]))
+print("换算规则（正文 14.1 节那张表的第三列）：环境步 = 圈数 × 每圈步数；仿真时间 = 环境步 × 0.02 秒；物理步 = 环境步 × 4；"
+      "记录条数 = 只数 × 环境步；更新次数 = 圈数 × 20。反过来：环境步 ÷ 24 = 圈数，记录条数 ÷ 只数 = 环境步")
+check("图 ③ 两个大刻度之间 24 步 × 0.02 = 0.48 秒", math.isclose(24 * 0.02, 0.48) and math.isclose(STEPS * ENV_DT, 0.48))
+check("换算规则对迷你版和冒烟都成立；反过来 12,000 ÷ 24 = 500、7680 ÷ 64 = 120；一秒做 1 ÷ 0.02 = 50 次决定",
+      all(c["env_steps"] == c["iters"] * s and math.isclose(c["sim_s"], c["env_steps"] * ENV_DT)
+          and c["phys_steps"] == c["env_steps"] * DECIMATION and c["records"] == r * c["env_steps"] and c["updates"] == c["iters"] * UPDATES
+          for c, r, s in ((MINI, 2, 3), (SMOKE, NUM_ENVS_SMOKE, STEPS)))
+      and 12_000 / 24 == 500 and 7680 / 64 == 120 and round(1 / 0.02) == 50 and round(1 / ENV_DT) == 50)
 
 wall = [c + l for c, l in zip(ARCHIVE_EVENTS["Perf/collection_time"], ARCHIVE_EVENTS["Perf/learning_time"])]
 print("墙上时间（存档那次的事件文件，每圈 = 收集 + 学习）：" + "、".join(f"第 {k} 圈 {w:.2f} s" for k, w in enumerate(wall))
@@ -165,6 +173,10 @@ check("墙上时间：最后一圈 0.538 + 0.040 = 0.578 s，和事件文件第 
       round(0.538 + 0.040, 3) == 0.578 == round(wall[4], 3) and round(wall[0], 2) == 1.01 and round(wall[1], 2) == 0.82
       and all(round(w, 2) in (0.57, 0.58) for w in wall[2:]) and round(sum(wall), 2) == 3.56
       and val(ARCHIVE["Collection time"]) == 0.538 and val(ARCHIVE["Learning time"]) == 0.040)
+wall_r = [round(w, 2) for w in wall]
+print(f"正文表里墙上时间那一格：{' + '.join(f'{w:.2f}' for w in wall_r)} = {sum(wall_r):.2f} 秒")
+check("墙上时间那一格（字面值）：每圈留两位是 1.01、0.82、0.58、0.57、0.58；1.01 + 0.82 + 0.58 + 0.57 + 0.58 = 3.56；0.578 留两位 → 0.58",
+      wall_r == [1.01, 0.82, 0.58, 0.57, 0.58] and round(1.01 + 0.82 + 0.58 + 0.57 + 0.58, 2) == 3.56 and round(0.578, 2) == 0.58)
 
 _arch_dir = archive_run_dir()
 if _arch_dir is None:
@@ -188,6 +200,10 @@ check("1000 圈：24,000 个环境步 = 480 秒 = 8 分钟；4096 × 480 = 1,966
       real["env_steps"] == 24000 and math.isclose(robot_s, 480) and 4096 * 480 == 1_966_080
       and round(1_966_080 / 3600) == 546 and round(1_966_080 / 86400, 1) == 22.8)
 check("旧例子：2.6 × 1000 = 2600 秒 ≈ 43 分钟", round(2.6 * 1000) == 2600 and round(2600 / 60) == 43)
+check("1000 圈一步一步（字面值）：1000 × 24 = 24,000；24,000 × 0.02 = 480；480 ÷ 60 = 8；1,966,080 ÷ 3600 → 546.1；546.1 ÷ 24 → 22.8",
+      1000 * 24 == 24_000 and round(24_000 * 0.02) == 480 and 480 / 60 == 8 and round(1_966_080 / 3600, 1) == 546.1
+      and round(546.1 / 24, 1) == 22.8)
+check("回合钟的 0–999：一个回合最长 20 ÷ 0.02 = 1000 步，从 0 数到 999", round(20 / 0.02) == 1000 == EPISODE_STEPS)
 print(f"自测：64 只换成 4096 只，每圈环境步仍是 {STEPS}（课程钟每圈走 24），记录从 {64 * STEPS} 条变成 {4096 * STEPS:,} 条（64 倍）")
 check("自测：机器人从 64 只变 4096 只，课程钟每圈照样只走 24；记录 1536 → 98,304，正好 64 倍",
       clocks(4096, STEPS, 1)["env_steps"] == clocks(64, STEPS, 1)["env_steps"] == 24
@@ -284,6 +300,10 @@ check("61 / 76 / 14 不是手抄的：配置里 actor 这组 8 块、critic 这�
       "这三个数本身由第 9 节的旋钮个数兜住——61 → 512 → 256 → 128 → 14 算出 197,774，76 → … → 1 算出 203,777",
       len(cfg.observations["actor"].terms) == 8 and len(cfg.observations["critic"].terms) == 13
       and set(cfg.observations) == {"actor", "critic"})
+check("critic 比 actor 多看 76 − 61 = 15 个数；183 分组加：61 + 76 = 137，3 × 14 = 42，137 + 42 + 4 = 183",
+      OBS_CRITIC - OBS_ACTOR == 15 and 61 + 76 == 137 and 3 * 14 == 42 and 137 + 42 + 4 == 183 == per_row)
+check("[24, 4096, 61]：24 × 249,856 = 5,996,544 个数，却只有 24 × 4096 = 98,304 条记录",
+      24 * 249_856 == 5_996_544 == 24 * 4096 * 61 and 24 * 4096 == 98_304 == rows_real)
 
 # ---------------------------------------------------------------------------
 banner("3. 算优势、拧 20 次：记下的数不动，策略在动")
@@ -293,9 +313,21 @@ print(f"每圈 {ALG.num_learning_epochs} 遍 × {ALG.num_mini_batches} 份 = {UP
 check("每份 98,304 ÷ 4 = 24,576 行（冒烟 384 行）；每行用 5 次：20 × 24,576 = 98,304 × 5 = 491,520",
       mb_real == 24_576 and mb_smoke == 384 and 20 * 24_576 == 98_304 * 5 == 491_520)
 check("自测：份数改成 8，一圈拧 5 × 8 = 40 次，每份 98,304 ÷ 8 = 12,288 行", 5 * 8 == 40 and 98_304 // 8 == 12_288)
+check("returns = V + Â：构造的小数 0.5 + 0.2 = 0.7（critic 下回该猜的数）", math.isclose(0.5 + 0.2, 0.7))
+check("KL 的门槛（desired_kl 从配置读出）：0.01 × 2 = 0.02 以上 ÷ 1.5，0.01 ÷ 2 = 0.005 以下 × 1.5",
+      ALG.desired_kl == 0.01 and ALG.schedule == "adaptive" and 0.01 * 2 == 0.02 and 0.01 / 2 == 0.005)
+LNPI_OLD, LNPI_NOW = -1.0439, -0.9639                    # 第 13 章那组数：采集时和现在的 ln π
+print(f"比率：exp(现在的 ln π − 旧的 ln π) = exp({LNPI_NOW} − ({LNPI_OLD})) = exp({LNPI_NOW - LNPI_OLD:.2f}) = {math.exp(LNPI_NOW - LNPI_OLD):.4f}")
+check("比率：−0.9639 − (−1.0439) = 0.08，exp(0.08) → 1.0833（约多 8%）；ln 相减再 exp 就是概率相除（0.3 和 0.2 试一下）",
+      round(LNPI_NOW - LNPI_OLD, 4) == 0.08 and round(math.exp(0.08), 4) == 1.0833 and round((math.exp(0.08) - 1) * 100) == 8
+      and math.isclose(math.exp(math.log(0.3) - math.log(0.2)), 0.3 / 0.2))
+check("三项损失和裁剪的系数（配置）：surrogate + 1.0 × value − 0.01 × 熵；梯度裁剪上限 1.0；比率夹在 1 − 0.2 = 0.8 到 1 + 0.2 = 1.2",
+      ALG.value_loss_coef == 1.0 and ALG.entropy_coef == 0.01 and ALG.max_grad_norm == 1.0 and ALG.clip_param == 0.2
+      and math.isclose(1 - ALG.clip_param, 0.8) and math.isclose(1 + ALG.clip_param, 1.2))
 share = val(ARCHIVE["Collection time"]) / (val(ARCHIVE["Collection time"]) + val(ARCHIVE["Learning time"]))
 print(f"存档最后一圈：收集 0.538 s、学习 0.040 s，收集占 {share:.0%}")
-check("存档最后一圈：0.538 ÷ 0.578 ≈ 93% 的墙上时间花在跑仿真收数据上", round(0.538 / 0.578, 2) == 0.93)
+check("存档最后一圈：0.538 + 0.040 = 0.578 秒；0.538 ÷ 0.578 ≈ 0.93 = 93% 的墙上时间花在跑仿真收数据上",
+      round(0.538 + 0.040, 3) == 0.578 and round(0.538 / 0.578, 2) == 0.93 and round(share, 2) == 0.93)
 
 # ---------------------------------------------------------------------------
 banner("3b. 画图：figures/ch14_overview.png（14.0 节的总览图）")
@@ -341,6 +373,11 @@ table(["日志行", "存档里的值"], [[k, v] for k, v in ARCHIVE.items()])
 total_steps = int(ARCHIVE["Total steps"])
 print(f"Total steps：5 圈 × 64 只 × 24 步 = {5 * 64 * 24}（记录条数）；环境步只有 5 × 24 = 120")
 check("Total steps 7680 = 5 × 64 × 24：数的是记录，不是环境步（环境步是 120）", total_steps == 5 * 64 * 24 == 7680 != 120)
+per_iter = 64 * STEPS                                     # 冒烟训练每圈 Total steps 加多少
+seq = [k * per_iter for k in range(1, SMOKE_ITERS + 1)]
+print(f"Total steps 每圈加 24 × 64 = {per_iter}，5 圈依次是 " + "、".join(str(v) for v in seq))
+check("Total steps 一圈圈涨：1536、3072、4608、6144、7680；反过来 7680 ÷ 1536 = 5 圈",
+      seq == [1536, 3072, 4608, 6144, 7680] and 24 * 64 == 1536 and 7680 / 1536 == 5 and total_steps / per_iter == SMOKE_ITERS)
 H1 = 0.5 * math.log(2 * math.pi * math.e)                 # σ = 1 的一口钟的熵（第 4 章 4.9 节）：1.41894
 H14 = 14 * H1
 entropy = val(ARCHIVE["Mean entropy loss"])
@@ -356,10 +393,59 @@ check("反推：(19.8079 − 19.865) ÷ 14 ≈ −0.0041；Math.exp(−0.0041) =
       round((19.8079 - 19.865) / 14, 4) == -0.0041 and round(mean_log_sigma, 4) == -0.0041
       and round(math.exp(-0.0041), 4) == 0.9959 and f"{sigma_geo:.2f}" == ARCHIVE["Mean action std"]
       and round(0.9959, 3) == 0.996 and round((1 - 0.9959) * 100, 1) == 0.4)
+
+
+def gauss_entropy(s: float) -> float:
+    """一口 σ = s 的钟的熵（第 4 章 4.9 节的 ½ ln(2πe σ²)）。"""
+    return 0.5 * math.log(2 * math.pi * math.e * s * s)
+
+
+check("折叠第 1 步：一口钟的熵 = 1.41894 + ln σ——宽度乘几倍，熵就加这个倍数的 ln（σ 翻倍加 ln 2 → 0.693）",
+      round(gauss_entropy(1.0), 5) == 1.41894
+      and all(math.isclose(gauss_entropy(s), gauss_entropy(1.0) + math.log(s)) for s in (0.5, 0.9959, 2.0))
+      and round(gauss_entropy(2.0) - gauss_entropy(1.0), 3) == 0.693 == round(math.log(2), 3))
+check("折叠的字面值：19.865 − 19.8079 → 0.0571；19.8079 − 19.865 = −0.0571；−0.0571 ÷ 14 → −0.0041；1 − 0.9959 = 0.0041；0.9959 留两位 → 1.00",
+      round(19.865 - 19.8079, 4) == 0.0571 and round(19.8079 - 19.865, 4) == -0.0571 and round(-0.0571 / 14, 4) == -0.0041
+      and round(1 - 0.9959, 4) == 0.0041 and f"{0.9959:.2f}" == "1.00")
+V_MINI, RET_MINI = [0.5, 0.8, 0.3], [0.4, 1.0, 0.1]      # value loss 的迷你版（构造的三条记录）
+v_diff = [round(v - r, 10) for v, r in zip(V_MINI, RET_MINI)]
+v_loss = sum(d * d for d in v_diff) / len(v_diff)
+print(f"value loss 迷你版：V − returns = {v_diff}，平方 {[round(d * d, 4) for d in v_diff]}，平均 {v_loss:.2f}；"
+      f"存档 0.0568 开根号 = {math.sqrt(val(ARCHIVE['Mean value loss'])):.4f}")
+check("value loss 手算：差 0.1、−0.2、0.2，平方 0.01、0.04、0.04，(0.01 + 0.04 + 0.04) ÷ 3 = 0.03；√0.0568 → 0.24",
+      v_diff == [0.1, -0.2, 0.2] and math.isclose(v_loss, 0.03) and math.isclose((0.01 + 0.04 + 0.04) / 3, 0.03)
+      and round(math.sqrt(0.0568), 2) == 0.24 and round(math.sqrt(val(ARCHIVE["Mean value loss"])), 2) == 0.24)
+
+
+def surrogate_loss(adv, ratio, clip=ALG.clip_param) -> float:
+    """rsl_rl 的 surrogate_loss：每条记录取 max(−Â × 比率, −Â × 裁剪后的比率)，再平均（第 13 章 13.4 节）。"""
+    adv, ratio = np.asarray(adv, dtype=float), np.asarray(ratio, dtype=float)
+    return float(np.mean(np.maximum(-adv * ratio, -adv * np.clip(ratio, 1 - clip, 1 + clip))))
+
+
+sur_first, sur_later = surrogate_loss([1, -1], [1.0, 1.0]), surrogate_loss([1, -1], [1.05, 0.95])
+print(f"surrogate 迷你版（Â = +1、−1）：比率 1、1 → {sur_first:g}；比率 1.05、0.95 → {sur_later:.2f}")
+check("surrogate 迷你版：比率都是 1 时 (−1 + 1) ÷ 2 = 0；拧过几次、比率 1.05 和 0.95 时 (−1.05 + 0.95) ÷ 2 = −0.05（在 0.8–1.2 之内，裁剪不出手）",
+      sur_first == 0 and math.isclose(sur_later, -0.05) and math.isclose((-1.05 + 0.95) / 2, -0.05)
+      and math.isclose(-(+1) * 1.05, -1.05) and math.isclose(-(-1) * 0.95, 0.95))
 ep_len = val(ARCHIVE["Mean episode length"])
 print(f"回合长度：{ep_len} 步 × 0.02 = {ep_len * ENV_DT:.4f} 秒；跑满是 {EPISODE_STEPS} 步")
-check("回合长度：35.21 × 0.02 = 0.7042 秒，约 0.7 秒就摔；跑满是 1000 步", round(35.21 * 0.02, 4) == 0.7042
-      and round(ep_len * ENV_DT, 4) == 0.7042)
+check("回合长度：35.21 × 0.02 = 0.7042 秒，约 0.7 秒就摔；跑满是 20 ÷ 0.02 = 1000 步", round(35.21 * 0.02, 4) == 0.7042
+      and round(ep_len * ENV_DT, 4) == 0.7042 and round(20 / 0.02) == 1000)
+from collections import deque  # noqa: E402
+
+window = deque(maxlen=3)                                  # 迷你版：rsl_rl 的队列装 100 个，这里只装 3 个
+for length in (20, 30, 40):
+    window.append(length)
+mean_before = sum(window) / len(window)
+window.append(50)                                         # 又结束一个 50 步的回合：最旧的 20 被挤掉
+mean_after = sum(window) / len(window)
+check("最近 N 个回合的队列（迷你版装 3 个）：20、30、40 → 平均 30；来了 50、挤掉 20 → (30 + 40 + 50) ÷ 3 = 40",
+      mean_before == 30 == (20 + 30 + 40) / 3 and list(window) == [30, 40, 50] and mean_after == 40 == (30 + 40 + 50) / 3)
+mean_rew = val(ARCHIVE["Mean reward"])
+print(f"Mean reward ÷ Mean episode length = {mean_rew} ÷ {ep_len} = {mean_rew / ep_len:.4f} 分/步；活满 1000 步约 {round(mean_rew / ep_len, 4) * 1000:.1f}")
+check("Mean reward 和回合长度是同一批回合：0.12 ÷ 35.21 → 0.0034 分/步；0.0034 × 1000 = 3.4",
+      round(mean_rew / ep_len, 4) == 0.0034 and round(0.12 / 35.21, 4) == 0.0034 and round(0.0034 * 1000, 1) == 3.4)
 check("自测：4096 只，标题 Learning iteration 9/… 那块是第 10 圈：Total steps = 10 × 4096 × 24 = 983,040；环境步 10 × 24 = 240",
       10 * 4096 * 24 == 983_040 and 10 * STEPS == 240)
 check("三个损失的读数：value loss 为正（是平方的平均）；surrogate loss 是个小负数；熵在 19.865 附近",
@@ -369,6 +455,9 @@ print(f"Steps per second：存档那一圈收的 64 × 24 = 1536 条记录 ÷ �
       f"（它也数记录，不是环境步）")
 check("Steps per second：1536 ÷ 0.578 ≈ 2657 条/秒（64 只 × 24 步 = 1536 条，0.538 + 0.040 = 0.578 秒）",
       round(64 * 24 / 0.578) == 2657 and round(1536 / round(0.538 + 0.040, 3)) == 2657)
+fps_log = int(1536 / (ARCHIVE_EVENTS["Perf/collection_time"][4] + ARCHIVE_EVENTS["Perf/learning_time"][4]))   # rsl_rl 的算法
+print(f"日志自己算 Steps per second：用没舍入的秒数、小数直接去掉 → int(1536 ÷ {ARCHIVE_EVENTS['Perf/collection_time'][4] + ARCHIVE_EVENTS['Perf/learning_time'][4]:.6f}) = {fps_log}")
+check("日志按没舍入的秒数算、去掉小数，和拿印出来的秒数手算的 2657 只差一两条", abs(fps_log - 2657) <= 2)
 
 # ---------------------------------------------------------------------------
 banner("4b. 画图：figures/ch14_log_groups.png（读一块日志的动线：四组，每组先盯住一处）")
@@ -450,6 +539,38 @@ check("每步 0.5 × 2 × 0.02 = 0.02；活满 20 秒：1000 步加起来 20，�
 check(f"只活 5 秒：250 步加起来 5，读数 5 ÷ 20 = 0.25（当前 ALIVE_S = {ALIVE_S:g} 秒，读数 {read_short:.4g}）",
       n_short == 250 and math.isclose(total_short, 5) and math.isclose(read_short, 0.25)
       and math.isclose(0.5 * 2 * 0.02 * 250 / 20, 0.25))
+check("步数：20 ÷ 0.02 = 1000，5 ÷ 0.02 = 250；每步一样好，读数小了 1 ÷ 0.25 = 4 倍",
+      round(20 / 0.02) == 1000 and round(5 / 0.02) == 250 and 1 / 0.25 == 4)
+per_second = KERNEL * WEIGHT                              # "时薪"：函数值 × 权重 = 每秒挣几分
+check("时薪：0.5 × 2 = 1 分/秒；一步 0.02 秒时一秒 50 步，50 × 0.02 = 1；一步改成 0.01 秒，一秒 100 步，100 × 0.01 = 1——一秒挣的分不随步长变",
+      per_second == 1 and math.isclose(sum(per_second * 0.02 for _ in range(50)), 1) and math.isclose(sum(per_second * 0.01 for _ in range(100)), 1)
+      and math.isclose(50 * 0.02, 1) and math.isclose(100 * 0.01, 1))
+
+
+def simplified(f: float, w: float, alive_s: float) -> float:
+    """化简后的式子：读数 = 函数值 × 权重 × (活了几秒 ÷ 20)。"""
+    return f * w * (alive_s / EPISODE_S)
+
+
+check(f"化简后的式子和一步一步加出来的一样（当前 ALIVE_S = {ALIVE_S:g} 秒）；字面值 0.5 × 2 × (20 ÷ 20) = 1，0.5 × 2 × (5 ÷ 20) = 1 × 0.25 = 0.25",
+      math.isclose(simplified(KERNEL, WEIGHT, EPISODE_S), read_full) and math.isclose(simplified(KERNEL, WEIGHT, ALIVE_S), read_short)
+      and 0.5 * 2 * (20 / 20) == 1 and 0.5 * 2 * (5 / 20) == 0.25 == 1 * 0.25)
+check("化简的四步：3 + 3 + 3 = 3 × 3；2 × 3 × 4 = 24 = 3 × (2 × 4)；1000 × 0.02 = 20 秒、250 × 0.02 = 5 秒",
+      3 + 3 + 3 == 3 * 3 and 2 * 3 * 4 == 24 == 3 * (2 * 4) and math.isclose(1000 * 0.02, 20) and math.isclose(250 * 0.02, 5))
+alternating = [0.4 if t % 2 == 0 else 0.6 for t in range(EPISODE_STEPS)]   # 函数值 0.4、0.6 轮流出现
+alt_reading = sum(f * WEIGHT * ENV_DT for f in alternating) / EPISODE_S
+check("函数值逐步在变：1000 步里 0.4、0.6 轮流，加起来 500 × 0.4 + 500 × 0.6 = 200 + 300 = 500，平均 0.5，读数还是 1",
+      math.isclose(sum(alternating), 500) and math.isclose(sum(alternating) / len(alternating), 0.5) and math.isclose(alt_reading, 1.0)
+      and math.isclose(500 * 0.4, 200) and math.isclose(500 * 0.6, 300))
+ended_per_step = [[0.2, 0.4], [], [0.6]]                  # 迷你版：一圈只有 3 步，每一步结束的那几只这一项的读数（构造的）
+logged_steps, last_logged = [], None
+for ended in ended_per_step:
+    if ended:                                             # 有机器人结束：这一步记它们的平均
+        last_logged = sum(ended) / len(ended)
+    logged_steps.append(last_logged)                      # 没人结束：沿用上一笔
+check("先对每一步结束的几只取平均、没人结束就沿用上一笔，再对各步取平均：记下 0.3、0.3、0.6，(0.3 + 0.3 + 0.6) ÷ 3 = 0.4",
+      [round(x, 10) for x in logged_steps] == [0.3, 0.3, 0.6] and math.isclose(sum(logged_steps) / len(logged_steps), 0.4)
+      and math.isclose((0.2 + 0.4) / 2, 0.3) and math.isclose((0.3 + 0.3 + 0.6) / 3, 0.4))
 check("满分（函数值恒为 1）、活满 20 秒时，读数恰好等于权重",
       all(math.isclose(episode_reward(1.0, w, EPISODE_S)[1] / EPISODE_S, w) for w in (2.0, -0.1, 3.0)))
 w_track = cfg.rewards["track_linear_velocity"].weight
@@ -460,8 +581,13 @@ print(f"track_linear_velocity：权重 {w_track:g}（配置）；回合 35.21 �
 check("估算：2 × 35.21 × 0.02 ÷ 20 = 0.0704；0.0224 ÷ 0.0704 ≈ 0.32——活着时每步平均只拿到满分的三成左右",
       w_track == 2.0 and round(2 * 35.21 * 0.02 / 20, 4) == 0.0704 and round(cap, 4) == 0.0704
       and round(0.0224 / 0.0704, 2) == 0.32)
-check("自测：函数值 0.8、权重 1、活 10 秒：0.8 × 1 × 0.02 × 500 ÷ 20 = 0.4",
-      math.isclose(episode_reward(0.8, 1.0, 10)[1] / EPISODE_S, 0.4) and round(0.8 * 1 * 0.02 * 500 / 20, 4) == 0.4)
+alive_frac = ep_len * ENV_DT / EPISODE_S                  # 活满的比例
+check("换个次序算同一个上限：0.7042 ÷ 20 = 0.03521（活满的比例）；2 × 1 × 0.03521 → 0.0704；0.32 就是每步的平均函数值",
+      math.isclose(0.7042 / 20, 0.03521) and math.isclose(alive_frac, 0.03521) and round(2 * 1 * 0.03521, 4) == 0.0704
+      and math.isclose(w_track * 1 * alive_frac, cap) and math.isclose(simplified(got / cap, w_track, ep_len * ENV_DT), got))
+check("自测：函数值 0.8、权重 1、活 10 秒：10 ÷ 0.02 = 500 步，0.8 × 1 × 0.02 × 500 ÷ 20 = 0.4；化简后 0.8 × 1 × (10 ÷ 20) = 0.8 × 0.5 = 0.4",
+      math.isclose(episode_reward(0.8, 1.0, 10)[1] / EPISODE_S, 0.4) and round(0.8 * 1 * 0.02 * 500 / 20, 4) == 0.4
+      and round(10 / 0.02) == 500 and math.isclose(simplified(0.8, 1.0, 10), 0.4) and math.isclose(0.8 * 0.5, 0.4))
 
 # ---------------------------------------------------------------------------
 banner("5b. 画图：figures/ch14_episode_reward_units.png（同样每步 0.02，活得短读数就小）")
@@ -540,6 +666,15 @@ w_rate = terms["action_rate_l2"].weight
 check("代价型：0.05 × (−0.1) = −0.005，每步 −0.0001——扣分",
       math.isclose(cost, 0.05) and w_rate == -0.1 and math.isclose(cost * w_rate, -0.005)
       and math.isclose(cost * w_rate * ENV_DT, -0.0001) and round(0.05 * -0.1, 4) == -0.005)
+check("平方和不会是负数：(−0.2)² = (−0.2) × (−0.2) = 0.04；0.1² = 0.01；0.01 + 0.04 = 0.05",
+      math.isclose((-0.2) ** 2, 0.04) and math.isclose((-0.2) * (-0.2), 0.04) and math.isclose(0.1 ** 2, 0.01) and math.isclose(0.01 + 0.04, 0.05))
+COMBOS = {("代价 ≥ 0", "负权重"): (0.05, -0.1), ("代价 ≥ 0", "正权重"): (0.05, 0.1),
+          ("自带负号 ≤ 0", "正权重"): (-0.2, 3.0), ("自带负号 ≤ 0", "负权重"): (-0.2, -3.0)}
+table(["函数", "权重", "函数值 × 权重", "对不对"],
+      [[f, w, f"{a * b:+.3g}", "对：扣分" if a * b <= 0 else "错：配反了"] for (f, w), (a, b) in COMBOS.items()])
+check("四种搭配：异号的两种乘出来 ≤ 0（−0.005、−0.6，对）；同号的两种 ≥ 0（+0.005、+0.6，配反）——同号得正、异号得负",
+      all((a * b <= 0) == ((a < 0) != (b < 0)) for a, b in COMBOS.values())
+      and math.isclose(0.05 * 0.1, 0.005) and math.isclose(-0.2 * 3, -0.6) and math.isclose(-0.2 * -3, 0.6))
 BIAS_ERR = -0.2                                        # head_pose_bias_penalty 的返回值：−|平均偏差|，偏 0.2 rad 时是 −0.2
 HEAD_POSE_BIAS_WEIGHT = 3.0  # TWEAK-3: -3.0
 contrib = BIAS_ERR * HEAD_POSE_BIAS_WEIGHT
@@ -548,12 +683,32 @@ print(f"手算（自带负号）：(−0.2) × {HEAD_POSE_BIAS_WEIGHT:g} = {cont
 check(f"自带负号型：(−0.2) × 权重 {HEAD_POSE_BIAS_WEIGHT:g} = {contrib:+.1f}，应当 ≤ 0（课程的最终权重是 3：−0.6，每步 −0.012）",
       contrib <= 0 and math.isclose(-0.2 * 3, -0.6) and math.isclose(-0.2 * 3 * 0.02, -0.012))
 check("写反的样子：(−0.2) × (−3) = +0.6，每步 +0.012——负负得正", math.isclose(-0.2 * -3, 0.6) and math.isclose(0.6 * 0.02, 0.012))
+check("弧度：半圈 180° 是 3.1416 弧度，1 rad = 180 ÷ 3.1416 → 57.3°；0.2 rad ≈ 0.2 × 57.3 = 11.46 → 11.5°",
+      round(180 / 3.1416, 1) == 57.3 and round(math.degrees(1), 1) == 57.3 and round(0.2 * 57.3, 2) == 11.46
+      and round(0.2 * 57.3, 1) == 11.5 and round(math.degrees(0.2), 1) == 11.5)
+check("head_pose_bias 的“平均”是最近约 1 秒的滑动平均：配置里 tau_s = 1.0 秒",
+      terms["head_pose_bias"].params.get("tau_s") == 1.0)
 agents_text = (REPO / "AGENTS.md").read_text(encoding="utf-8") if (REPO / "AGENTS.md").is_file() else ""
 if agents_text:
     check("AGENTS.md 原话：mjlab 的代价函数 ≥ 0 配负权重；自带负号的 *_penalty、*_l1 配正权重；惩罚项的 Episode_Reward 必须 ≤ 0",
           lines_in_order(agents_text, ["cost functions return ≥ 0 → negative weight.", "(`*_penalty`, `*_l1` returning ≤ 0) → POSITIVE weight.",
                                        "policy will farm it (butt-hopping, crash-sits). **The infallible check: on",
                                        "every run, every `Episode_Reward/<penalty>` in wandb must be ≤ 0.**"]))
+chain_step = cost * w_rate * ENV_DT                       # action_rate_l2 每一步记的那一笔
+chain_total = sum(chain_step for _ in range(EPISODE_STEPS))
+chain_read = chain_total / EPISODE_S
+print(f"正负号一路传到日志：每步 {chain_step:+.4f}，1000 步加起来 {chain_total:+.4f}，÷ 20 = {chain_read:+.4f}")
+check("正负号一路传：−0.005 × 0.02 = −0.0001；1000 × (−0.0001) = −0.1；−0.1 ÷ 20 = −0.005 = (−0.1) × 0.05 × (20 ÷ 20)",
+      math.isclose(chain_step, -0.0001) and math.isclose(chain_total, -0.1) and math.isclose(chain_read, -0.005)
+      and math.isclose(-0.005 * 0.02, -0.0001) and math.isclose(1000 * -0.0001, -0.1) and math.isclose(-0.1 / 20, -0.005)
+      and math.isclose((-0.1) * 0.05 * (20 / 20), -0.005) and math.isclose(simplified(0.05, w_rate, EPISODE_S), chain_read))
+neg = -np.random.default_rng(6).uniform(0, 1, size=(64, 300))   # 一群 ≤ 0 的"每步那一笔"（随便造的）
+neg_read = (neg * ENV_DT).sum(axis=1) / EPISODE_S
+check("乘正数、相加、除以正数、取平均，都不改正负号：一群 ≤ 0 的数走完这几道手续，结果仍 ≤ 0",
+      bool(np.all(neg * ENV_DT <= 0)) and bool(np.all(neg_read <= 0)) and float(neg_read.mean()) <= 0)
+check("存档表后面点名的 8 个代价项（按日志顺序）；夹在中间的 air_time 是奖励（权重 +3）",
+      cost_style == ["body_ang_vel", "angular_momentum", "dof_pos_limits", "action_rate_l2", "foot_clearance",
+                     "foot_swing_height", "foot_slip", "self_collisions"] and terms["air_time"].weight == 3.0)
 import inspect  # noqa: E402
 check("权重为 0 的两项都是普通函数（不是类）：mjlab 连调用都不调用它们——冒烟的 5 圈里它们一次都没运行过",
       all(terms[n].weight == 0 and not inspect.isclass(terms[n].func) for n in ("body_pose_tracking", "head_pose_bias")))
@@ -646,6 +801,9 @@ check("最早的换档在第 500 圈 = 500 × 24 = 12,000 个环境步（head_po
       changes[0] == 500 * 24 == 12_000 and first_change("head_pose_bias_weight") == 600 * 24)
 check("头部命令范围读数 0.07 = 第 0 档四个范围里最大的上限（头部偏航 ±0.07 rad）",
       cur["head_pose_range"].params["range_stages"][0]["ranges"][2] == (-0.07, 0.07) and stage0("head_pose_range") == 0.07)
+check("表的手算：12,000 ÷ 24 = 500 圈，14,400 ÷ 24 = 600 圈；0.07 rad ≈ 0.07 × 57.3 = 4.011 ≈ 4°",
+      12_000 / 24 == 500 and 14_400 / 24 == 600 and first_change("action_rate_weight") == 12_000
+      and round(0.07 * 57.3, 3) == 4.011 and round(math.degrees(0.07)) == 4)
 fell = val(ARCHIVE_OTHER["Episode_Termination/fell_over"])
 print(f"fell_over = {fell}。若读成“每只机器人这一圈摔了 {fell} 次”，回合只有 24 ÷ {fell} ≈ {24 / fell:.1f} 步——和 35.21 对不上；"
       f"读成“平均每一步有几只摔倒”：64 只里每步约 64 ÷ 35.21 ≈ {64 / 35.21:.2f} 只走到回合尽头，和 {fell} 差不多")
@@ -653,6 +811,23 @@ check("反证：24 ÷ 2.0833 ≈ 11.5 步，不到 35.21 的一半——“每�
       round(24 / 2.0833, 1) == 11.5 and round(24 / fell, 1) == 11.5 and 24 / fell < 35.21 / 2)
 check("对得上的读法：64 ÷ 35.21 ≈ 1.82 只/步，和日志的 2.08 差不多（相差不到两成；两者统计的不是同一批回合）",
       round(64 / 35.21, 2) == 1.82 and abs(64 / 35.21 / fell - 1) < 0.2)
+check("每步摔几只：64 × (1/35.21) = 64 ÷ 35.21；迷你版 3 只、每只每 10 步摔一次，30 步摔 3 × 3 = 9 次，9 ÷ 30 = 0.3 = 3 ÷ 10",
+      math.isclose(64 * (1 / 35.21), 64 / 35.21) and 3 * (30 // 10) == 9 and 9 / 30 == 0.3 == 3 / 10)
+check("折叠：2.0833 正好是 50 ÷ 24——这一圈 24 步记下的 24 笔，加起来是 50", round(50 / 24, 4) == 2.0833 == fell and round(fell * 24) == 50)
+p_fall = 1 / ep_len                                       # 每只机器人每走一步摔倒的机会（按回合平均 35.21 步估）
+falls = np.random.default_rng(14).binomial(64, p_fall, size=200_000)   # 模拟 20 万步：每一步 64 只里摔了几只
+reused, last_count = [], None
+for n_fell in falls:                                      # mjlab 的记法：没人重置的那一步，沿用上一笔
+    if n_fell > 0:
+        last_count = int(n_fell)
+    if last_count is not None:
+        reused.append(last_count)
+plain_avg, reused_avg = float(falls.mean()), float(np.mean(reused))
+theory_reused = 64 * p_fall / (1 - (1 - p_fall) ** 64)    # 理论值：只在“有人摔”的那些步里取平均
+print(f"模拟 20 万步：老老实实每步数一遍，平均 {plain_avg:.2f}；没人重置就沿用上一笔，平均 {reused_avg:.2f}（理论值 {theory_reused:.3f}）；日志 {fell}")
+check("沿用上一笔会把平均往上抬：模拟 20 万步，老实数是 1.82，沿用后约 2.16（理论值 2.159）——比 1.82 更靠近日志的 2.08",
+      round(plain_avg, 2) == 1.82 and round(reused_avg, 2) == 2.16 and abs(reused_avg - theory_reused) < 0.02
+      and abs(reused_avg - fell) < abs(plain_avg - fell))
 twist = cfg.commands["twist"]
 max_cmd_steps = round(twist.resampling_time_range[1] / ENV_DT)
 err_xy = val(ARCHIVE_OTHER["Metrics/twist/error_vel_xy"])
@@ -661,6 +836,12 @@ print(f"速度误差：命令最长 {twist.resampling_time_range[1]:g} 秒不换
 check("Metrics/twist/error_vel_xy：除的是 8 ÷ 0.02 = 400；0.0336 × 400 = 13.44，÷ 35.21 ≈ 0.38 m/s",
       twist.resampling_time_range == (3.0, 8.0) and max_cmd_steps == 400 and round(0.0336 * 400, 2) == 13.44
       and round(13.44 / 35.21, 2) == 0.38 and round(err_xy * 400 / ep_len, 2) == 0.38)
+check("两个方向合起来的差：前后 0.3、左右 0.4，√(0.3² + 0.4²) = √(0.09 + 0.16) = √0.25 = 0.5（第 2 章 2.3 节的长度）",
+      math.isclose(math.hypot(0.3, 0.4), 0.5) and math.isclose(0.3 ** 2, 0.09) and math.isclose(0.4 ** 2, 0.16)
+      and math.isclose(0.09 + 0.16, 0.25) and math.sqrt(0.25) == 0.5)
+check("为什么除以 400：回合正好 400 步、每步差 0.38，400 个 0.38 ÷ 400 加起来 = 0.38；先除再加 = 先加再除：(2 + 4) ÷ 2 = 2 ÷ 2 + 4 ÷ 2 = 3",
+      math.isclose(sum(0.38 / max_cmd_steps for _ in range(max_cmd_steps)), 0.38) and math.isclose(400 * (0.38 / 400), 0.38)
+      and (2 + 4) / 2 == 2 / 2 + 4 / 2 == 3)
 check("自测：fell_over 3.2、回合 20 步：64 ÷ 20 = 3.2 只/步，对得上；20 × 0.02 = 0.4 秒", 64 / 20 == 3.2 and round(20 * 0.02, 2) == 0.4)
 check("结束原因：这一圈没有超时、没有出界、没有 NaN", all(val(ARCHIVE_OTHER[f"Episode_Termination/{k}"]) == 0
                                         for k in ("time_out", "out_of_terrain_bounds", "nan_state")))
@@ -686,6 +867,10 @@ lr_events = ARCHIVE_EVENTS["Loss/learning_rate"]
 print(f"存档那次冒烟训练的学习率（事件文件，第 0–4 圈）：{', '.join(f'{v:g}' for v in lr_events)}")
 check("存档：第 0 圈结束时学习率已经在下限 0.00001；5 圈里都在 0.00001–0.000015",
       lr_events[0] == 1e-5 and all(1e-5 <= v <= 1.5e-5 for v in lr_events))
+check("连除两次 1.5 = 除以 1.5 × 1.5 = 2.25：0.001 ÷ 2.25 → 0.00044444；连除 11 次：0.001 ÷ 86.5 → 0.0000116，还高于下限 0.00001",
+      1.5 * 1.5 == 2.25 and math.isclose(LR0 / 1.5 / 1.5, LR0 / 2.25) and round(0.001 / 2.25, 8) == 0.00044444
+      and round(0.001 / 86.5, 7) == 0.0000116 and 0.001 / 86.5 > LR_MIN)
+check("存档第 3 圈结束时的 0.000015 = 0.00001 × 1.5：那一圈里至少乘回了一次 1.5", lr_events[3] == 1.5e-5 and math.isclose(1e-5 * 1.5, 1.5e-5))
 
 # 示意数据：编的曲线，只示意形状（不是真实训练）。固定种子，每次画出来一样。
 rng = np.random.default_rng(14)
@@ -760,6 +945,15 @@ table(["部分", "几个数"], [["actor 的权重和偏置", f"{actor_mlp:,}"], 
                           ["Adam 的 m 和 v", f"{adam:,}"], ["检查点合计（不算归一化器的统计）", f"{ckpt_numbers:,}"]])
 print(f"检查点 ≈ {ckpt_numbers:,} × 4 字节 = {ckpt_bytes:,} 字节 ≈ {ckpt_bytes / 1e6:.1f} MB；"
       f"ONNX ≈ {actor_mlp:,} × 4 = {onnx_bytes:,} 字节 ≈ {onnx_bytes / 1e6:.2f} MB；约 {ckpt_bytes / onnx_bytes:.1f} 倍")
+layers_actor = [o * (i + 1) for i, o in zip([OBS_ACTOR, *hidden], [*hidden, N_ACT])]   # 每层：店数 × (输入个数 + 1)
+layers_critic = [o * (i + 1) for i, o in zip([OBS_CRITIC, *hidden], [*hidden, 1])]
+table(["层", "actor", "critic"], [[f"第 {k + 1} 层", f"{a:,}", f"{c:,}"] for k, (a, c) in enumerate(zip(layers_actor, layers_critic))]
+      + [["合计", f"{sum(layers_actor):,}", f"{sum(layers_critic):,}"]])
+check("逐层：512 × (61 + 1) = 31,744、256 × 513 = 131,328、128 × 257 = 32,896、14 × 129 = 1,806，合计 197,774；"
+      "critic 第 1 层 512 × (76 + 1) = 39,424、最后一层 1 × 129 = 129，合计 203,777",
+      layers_actor == [31_744, 131_328, 32_896, 1_806] and sum(layers_actor) == 197_774 == actor_mlp
+      and layers_critic == [39_424, 131_328, 32_896, 129] and sum(layers_critic) == 203_777 == critic_all
+      and 512 * 62 == 31_744 and 256 * 513 == 131_328 and 128 * 257 == 32_896 and 14 * 129 == 1_806 and 512 * 77 == 39_424)
 check("actor：197,774 + 14 = 197,788；critic 203,777（第 6 章 6.5、6.7 节）；可训练的一共 401,565",
       actor_all - N_ACT == actor_mlp == 197_774 and actor_all == 197_788 and critic_all == 203_777
       and trainable == 197_788 + 203_777 == 401_565 and hidden == [512, 256, 128] and MicroduckRlCfg.actor.distribution_cfg["std_type"] == "scalar")
@@ -777,6 +971,11 @@ print(f"存档那次的真文件：model_4.pt {ARCHIVE_SIZES['model_4.pt']:,} �
 check("存档的真文件大小（正文 14.9 节引的两个数）：4,842,943 − 4,818,780 = 24,163；793,706 − 791,096 = 2,610",
       ARCHIVE_SIZES["model_4.pt"] - ckpt_bytes == 4_842_943 - 4_818_780 == 24_163
       and ARCHIVE_SIZES["onnx"] - onnx_bytes == 793_706 - 791_096 == 2_610)
+norm_actor, norm_critic = OBS_ACTOR * 3 + 1, OBS_CRITIC * 3 + 1   # 平均、方差、标准差各一份，外加 1 个计数
+check("归一化器：61 × 3 + 1 = 184、76 × 3 + 1 = 229，一共 413 个数；每个按 8 字节算也只有 413 × 8 = 3,304 字节，远小于多出来的 24,163",
+      norm_actor == 184 and norm_critic == 229 and norm_actor + norm_critic == 413 and 413 * 8 == 3_304 < 24_163)
+check("旋钮自己一份、m 一份、v 一份：401,565 + 2 × 401,565 = 3 × 401,565；32 个 0/1 是 32 ÷ 8 = 4 字节",
+      401_565 + 2 * 401_565 == 3 * 401_565 == 1_204_695 and 32 / 8 == 4)
 save_every = MicroduckRlCfg.save_interval
 smoke_saves = sorted({i for i in range(SMOKE_ITERS) if i % save_every == 0} | {SMOKE_ITERS - 1})
 check(f"每 {save_every} 圈存一次（圈号能被 250 整除就存，第 0 圈也算），最后一圈再存一次：冒烟只有 model_0 和 model_4",
@@ -787,6 +986,10 @@ print(f"model_4.pt 里应记着四个计数：iter = {SMOKE_COUNTERS['iter']}、
       f"归一化器吃进的行数 count = {SMOKE_COUNTERS['normalizer_count']}、Adam 的 step = {SMOKE_COUNTERS['adam_step']}")
 check("冒烟结束时的四个计数：圈号 4、环境步 120、归一化器 7680 行、Adam 100 次——正是 14.1 节那张表",
       SMOKE_COUNTERS == {"iter": 4, "common_step_counter": 120, "normalizer_count": 7680, "adam_step": 100})
+check("后两个数自己乘：归一化器每个环境步吃进 64 行，120 × 64 = 7680；Adam 5 圈 × 20 次 = 100；仿真时间 120 × 0.02 = 2.4 秒",
+      120 * 64 == 7680 and 5 * 20 == 100 and round(120 * 0.02, 1) == 2.4)
+check("什么时候存：整除就是余数为 0——500 ÷ 250 = 2 余 0、0 ÷ 250 = 0 余 0 都存；4 ÷ 250 余 4 不存（最后一圈另存）",
+      500 % 250 == 0 and 500 // 250 == 2 and 0 % 250 == 0 and 4 % 250 == 4)
 
 run_dir = find_run_dir()
 if run_dir is None:
@@ -827,6 +1030,8 @@ else:
                   size_pt == ARCHIVE_SIZES["model_4.pt"] and size_onnx == ARCHIVE_SIZES["onnx"])
         check("观测是 61 维：actor 第一层的形状是 [512, 61]；critic 的是 [512, 76]",
               tuple(a["mlp.0.weight"].shape) == (512, 61) and tuple(c["mlp.0.weight"].shape) == (512, 76))
+        n_norm = [sum(v.numel() for k2, v in sd.items() if k2.startswith("obs_normalizer")) for sd in (a, c)]
+        check("真实检查点里两个归一化器的数：184 和 229（平均、方差、标准差各一份 + 1 个计数）", n_norm == [norm_actor, norm_critic])
 
 # ---------------------------------------------------------------------------
 banner("9b. 画图：figures/ch14_checkpoint.png（检查点和 ONNX 各装了什么）")
@@ -873,10 +1078,20 @@ print(f"冒烟 {SMOKE_ITERS} 圈 vs 课程第一次换档 {changes[0] // NUM_STE
       f"vs 步态预算 4000 圈：{SMOKE_ITERS / 4000:.3%}")
 check("5 ÷ 500 = 1%：冒烟测试连课程的第一档都没走完；5 ÷ 4000 = 0.125%", math.isclose(SMOKE_ITERS / 500, 0.01)
       and changes[0] // NUM_STEPS_PER_ENV == 500 and 5 / 4000 * 100 == 0.125)
+check("百分数一步一步：5 ÷ 500 = 0.01 = 1%；5 ÷ 4000 = 0.00125 = 0.125%", 5 / 500 == 0.01 and 5 / 4000 == 0.00125)
+REAL_BUDGET = 4000                                        # AGENTS.md 给步态的预算下限
+real_records = 4096 * STEPS * REAL_BUDGET
+print(f"冒烟到底小多少：机器人 4096 ÷ 64 = {4096 // 64} 倍，圈数 {REAL_BUDGET} ÷ 5 = {REAL_BUDGET // 5} 倍；"
+      f"记录 {real_records:,} ÷ 7680 = {real_records // 7680:,} 倍")
+check("规模账：4096 ÷ 64 = 64；4000 ÷ 5 = 800；64 × 24 × 5 = 7680；98,304 × 4000 = 393,216,000；393,216,000 ÷ 7680 = 51,200 = 64 × 800",
+      4096 // 64 == 64 and 4000 // 5 == 800 and 64 * 24 * 5 == 7680 and 98_304 * 4000 == 393_216_000 == real_records
+      and 393_216_000 / 7680 == 51_200 == 64 * 800)
 len_events = ARCHIVE_EVENTS["Train/mean_episode_length"]
 print("存档那次 Mean episode length（第 0–4 圈）：" + "、".join(f"{v:.2f}" for v in len_events))
 check("第 0 圈只有 24 步，能结束的回合最长 24 步：17.6 ≤ 24；之后的“变长”是窗口在填满，不是学会了",
       len_events[0] == 17.6 <= STEPS and all(a < b for a, b in zip(len_events, len_events[1:])))
+check("每一圈结束时，日志里的平均回合长度都不超过开训以来走过的步数：17.6 ≤ 24、31.78 ≤ 48……",
+      all(v <= (k + 1) * STEPS for k, v in enumerate(len_events)))
 if run_dir is not None:
     try:
         from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
@@ -913,31 +1128,58 @@ REWARD_LINES = ["episodic_sum_avg = torch.mean(self._episode_sums[key][env_ids])
                 "value = term_cfg.func(self._env, **term_cfg.params) * term_cfg.weight * scale",
                 "self._reward_buf += value", "self._episode_sums[name] += value"]
 OTHER = [  # （包, 路径, 要核对的行, 说明）
-    ("rsl_rl", ("utils", "logger.py"), ["self.rewbuffer = deque(maxlen=100)",
+    ("rsl_rl", ("utils", "logger.py"), ["self.rewbuffer = deque(maxlen=100)", "self.lenbuffer = deque(maxlen=100)",
+                                        "self.rewbuffer.extend(self.cur_reward_sum[new_ids][:, 0].cpu().numpy().tolist())",
+                                        "self.lenbuffer.extend(self.cur_episode_length[new_ids][:, 0].cpu().numpy().tolist())",
                                         'collection_size = self.cfg["num_steps_per_env"] * self.num_envs * self.gpu_world_size',
-                                        "self.tot_timesteps += collection_size", 'self.writer.add_scalar("Loss/learning_rate", learning_rate, it)',
+                                        "self.tot_timesteps += collection_size", "value = torch.mean(infotensor)",
+                                        'self.writer.add_scalar("Loss/learning_rate", learning_rate, it)',
                                         'self.writer.add_scalar("Policy/mean_std", action_std.mean().item(), it)',
+                                        "fps = int(collection_size / (collect_time + learn_time))",
                                         '{"Total steps:":>{pad}} {self.tot_timesteps}', '{f"Mean {key} loss:":>{pad}} {value:.4f}',
                                         '{"Mean reward:":>{pad}} {statistics.mean(self.rewbuffer):.2f}',
                                         '{"Mean action std:":>{pad}} {action_std.mean().item():.2f}'],
-     "logger.py：Total steps 每圈加 24 × 机器人只数；Mean reward 是最近 100 个回合；学习率只进 wandb"),
+     "logger.py：回合总分和回合长度是两个各装 100 个、同时放进去的队列；Total steps 每圈加 24 × 机器人只数；"
+     "分项账把这一圈各步记的数拼起来取平均；Steps per second 用没舍入的秒数、int 去掉小数；学习率只进 wandb"),
     ("rsl_rl", ("runners", "on_policy_runner.py"), ["saved_dict = self.alg.save()",
                                                      'saved_dict["iter"] = self.current_learning_iteration',
                                                      'saved_dict["infos"] = infos'],
      "on_policy_runner.py：检查点 = PPO 存的三样 + iter + infos，正好 5 样（14.9 节）"),
-    ("rsl_rl", ("algorithms", "ppo.py"), ["self.learning_rate = max(1e-5, self.learning_rate / 1.5)",
+    ("rsl_rl", ("algorithms", "ppo.py"), ["st.returns[step] = advantage + st.values[step]",
+                                          "self.learning_rate = max(1e-5, self.learning_rate / 1.5)",
                                           "self.learning_rate = min(1e-2, self.learning_rate * 1.5)",
+                                          "surrogate_loss = torch.max(surrogate, surrogate_clipped).mean()",
+                                          "loss = surrogate_loss + self.value_loss_coef * value_loss - self.entropy_coef * entropy.mean()",
+                                          "self.optimizer.zero_grad()",
+                                          "nn.utils.clip_grad_norm_(self.actor.parameters(), self.max_grad_norm)",
+                                          "nn.utils.clip_grad_norm_(self.critic.parameters(), self.max_grad_norm)",
+                                          "num_updates = self.num_learning_epochs * self.num_mini_batches",
+                                          "mean_entropy /= num_updates",
                                           "self.storage.clear()",
                                           '"actor_state_dict": self.actor.state_dict(),',
                                           '"critic_state_dict": self.critic.state_dict(),',
                                           '"optimizer_state_dict": self.optimizer.state_dict(),'],
-     "ppo.py：学习率夹在 0.00001 和 0.01 之间；update() 末尾扔掉这批数据；save() 存两张网和优化器"),
+     "ppo.py：returns = Â + V；学习率夹在 0.00001 和 0.01 之间；三项损失加起来；actor、critic 各裁一次梯度；"
+     "日志的三个损失是 20 次更新的平均；update() 末尾扔掉这批数据；save() 存两张网和优化器"),
+    ("rsl_rl", ("modules", "normalization.py"), ['self.register_buffer("_mean", torch.zeros(shape).unsqueeze(0))',
+                                                  'self.register_buffer("_var", torch.ones(shape).unsqueeze(0))',
+                                                  'self.register_buffer("_std", torch.ones(shape).unsqueeze(0))',
+                                                  'self.register_buffer("count", torch.tensor(0, dtype=torch.long))',
+                                                  "self.count += count_x"],
+     "normalization.py：归一化器存平均、方差、标准差和一个计数；count 每次加上这一批的行数"),
+    ("mjlab", ("envs", "manager_based_rl_env.py"), ["if self.cfg.auto_reset and len(reset_env_ids) > 0:",
+                                                     "self._reset_idx(reset_env_ids)",
+                                                     "def _reset_idx(self, env_ids: torch.Tensor | None = None) -> None:",
+                                                     'self.extras["log"] = dict()'],
+     "manager_based_rl_env.py：只有这一步有机器人重置，才换一本新的 extras[\"log\"]；没人重置就还是上一笔"),
+    ("mjlab", ("tasks", "velocity", "mdp", "rewards.py"), ["def track_linear_velocity(", "return torch.exp(-lin_vel_error / std**2)"],
+     "velocity 的 rewards.py：track_linear_velocity 是 exp(−误差 ÷ std²)，误差 ≥ 0，最大是 1"),
     ("mjlab", ("managers", "termination_manager.py"), ['extras["Episode_Termination/" + key] = torch.count_nonzero('],
      "termination_manager.py：结束原因记的是“这次重置的机器人里有几只”"),
     ("mjlab", ("tasks", "velocity", "mdp", "velocity_command.py"), ["max_command_time = self.cfg.resampling_time_range[1]",
                                                                      "max_command_step = max_command_time / self._env.step_dt",
-                                                                     "/ max_command_step"],
-     "velocity_command.py：速度误差每步除以 400 再累加"),
+                                                                     "torch.norm(", "/ max_command_step"],
+     "velocity_command.py：速度误差是前后、左右两个差合成的长度（torch.norm），每步除以 400 再累加"),
     ("mjlab", ("rl", "runner.py"), ['filename = f"{export_dir.name}.onnx"',
                                     'env_state = {"common_step_counter": self.env.unwrapped.common_step_counter}'],
      "mjlab 的 runner.py：ONNX 文件名 = 运行目录名（每次覆盖同一个）；检查点的 infos 里存着课程钟"),

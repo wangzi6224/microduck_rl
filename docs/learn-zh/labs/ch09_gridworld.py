@@ -9,6 +9,7 @@
 
 import importlib.util
 import math
+from itertools import product
 from pathlib import Path
 
 import numpy as np
@@ -60,6 +61,12 @@ check("在第 1 格按 →：80% 到第 2 格、20% 打滑退回第 0 格，两�
 check("在第 3 格按 →：80% 踩上终点拿 +1、这一局结束；20% 退回第 2 格拿 −0.05",
       outcomes(3, RIGHT) == [(4, 0.8, 1.0, True), (2, 0.2, -0.05, False)])
 check("在第 0 格按 ←：撞墙原地不动（80%），打滑反而到第 1 格（20%）", outcomes(0, LEFT) == [(0, 0.8, -0.05, False), (1, 0.2, -0.05, False)])
+n_situations = (N_CELLS - 1) * 2                       # 终点以外的格子 × 两个键
+check(f"终点以外 4 格 × 2 个键 = {n_situations} 种情形；每种情形照办 + 打滑的概率加起来是 1（0.8 + 0.2 = 1）",
+      n_situations == 8 == 4 * 2 and 0.8 + 0.2 == 1
+      and all(math.isclose(sum(p for _, p, _, _ in outcomes(s, a)), 1.0) for s in range(N_CELLS - 1) for a in (RIGHT, LEFT)))
+check("10 面骰子：掷出 1–8 照办（8/10 = 0.8），掷出 9 或 10 打滑（2/10 = 0.2）", math.isclose(8 / 10, 1 - P_SLIP) and math.isclose(2 / 10, P_SLIP))
+check("机器人一圈：仿真 4 小步 × 0.005 秒 = 0.02 秒；一秒转 1 ÷ 0.02 = 50 圈", math.isclose(4 * 0.005, 0.02) and round(1 / 0.02) == 50)
 
 rng = np.random.default_rng(1)
 n_try = 10_000
@@ -98,7 +105,7 @@ savefig(fig, "ch09_loop")
 plt.close(fig)
 
 # ---------------------------------------------------------------------------
-banner("2. 状态与观测：仿真器知道的一切 ⊃ critic 的 76 个数 ⊃ actor 的 61 个数（9.3 节）")
+banner("2. 状态与观测：仿真器知道的一切，套着 critic 的 76 个数，又套着 actor 的 61 个数（9.3 节）")
 # 走廊里状态和观测是同一样东西：全部真相就是“在第几格”，一共 N_CELLS 种，看一眼就全知道。
 check("走廊的全部真相只有一样：在第几格，一共 5 种（第 0 到第 4 格）；观测和它一模一样", N_CELLS == 5 and GOAL == N_CELLS - 1)
 
@@ -119,6 +126,12 @@ check("脚上的那几块合起来 12 个数：15 − 3 = 12，6 + 2 + 2 + 2 = 1
 check("前进速度只在 critic 那一层（actor 的 6 块里没有它）", "前进速度" not in dict(ACTOR_BLOCKS)
       and dict(CRITIC_EXTRA)["前进速度"] == 3)
 check("投影重力在 actor 这一层，3 个数（第 2 章 2.4 节）", dict(ACTOR_BLOCKS)["投影重力"] == 3)
+N_FEET, N_DIRECTIONS = 2, 3                            # 两只脚；力分前后、左右、上下三个方向
+_extra = dict(CRITIC_EXTRA)
+check("每块为什么是这几个数：机身速度分前后、左右、上下 3 个；接触力 2 只脚 × 3 个方向 = 6；离地高、腾空、踩实每只脚 1 个 → 2"
+      "（mjlab velocity_env_cfg.py 的 critic_terms；mdp/observations.py 的 foot_contact_forces 返回 [B, 脚数 × 3]）",
+      _extra["前进速度"] == N_DIRECTIONS and _extra["脚底的接触力"] == N_FEET * N_DIRECTIONS == 2 * 3 == 6
+      and _extra["脚离地多高"] == _extra["脚腾空多久"] == _extra["脚踩实了没有"] == N_FEET * 1 == 2)
 
 # ---------------------------------------------------------------------------
 banner("2b. 画图：figures/ch09_state_obs.png（走廊里两者一样；机器人里三层套三层）")
@@ -195,6 +208,9 @@ table(["策略", "按 → 的概率", "100 次里按 ← 的期望次数", "这�
 check("总是按 →：100 次里一次 ← 也没试过", tries_left["总是按 →"] == 0)
 check("九成按 →：期望 100 × 0.1 = 10 次 ←；这次抽到 " + str(tries_left["九成按 →"]) + " 次（落在 4 到 16 之间）",
       4 <= tries_left["九成按 →"] <= 16)
+check("表的算法：按 ← 的概率 = 1 − 按 → 的概率（1 − 0.9 = 0.1）；期望次数 = 100 × 按 ← 的概率（100 × 0.1 = 10，0.5 → 50，1 → 0）",
+      math.isclose(1 - 0.9, 0.1) and round(100 * 0.1) == 10 and round(100 * (1 - P_MOSTLY)) == 10
+      and [f"{100 * (1 - p):.0f}" for _, _, p in POLICIES] == ["0", "10", "50"])
 
 p_move_right = P_MOSTLY * (1 - P_SLIP) + (1 - P_MOSTLY) * P_SLIP
 by_obey, by_slip = P_MOSTLY * (1 - P_SLIP), (1 - P_MOSTLY) * P_SLIP   # 按 → 且照办；按 ← 却打滑
@@ -202,6 +218,13 @@ print(f"九成按 →：真往右挪的概率 = {P_MOSTLY:g} × {1 - P_SLIP:g} +
       f"{p_move_right:.2f}")
 check("两层随机叠起来：0.9 × 0.8 + 0.1 × 0.2 = 0.72 + 0.02 = 0.74", round(p_move_right, 2) == 0.74
       and round(0.72 + 0.02, 2) == 0.74)
+per100 = (100 * P_MOSTLY * (1 - P_SLIP), 100 * (1 - P_MOSTLY) * P_SLIP)   # 数 100 步：按 → 且照办、按 ← 却打滑
+print(f"数 100 步：约 {100 * P_MOSTLY:.0f} 步按 →，其中 {per100[0]:.0f} 步照办往右；约 {100 * (1 - P_MOSTLY):.0f} 步按 ←，其中 "
+      f"{per100[1]:.0f} 步打滑往右；一共 {sum(per100):.0f} 步")
+check("数 100 步：100 × 0.9 = 90 步按 →，90 × 0.8 = 72 步往右；100 × 0.1 = 10 步按 ←，10 × 0.2 = 2 步往右；72 + 2 = 74，占 0.74",
+      round(per100[0]) == 72 and round(per100[1]) == 2 and round(sum(per100)) == 74
+      and round(100 * 0.9) == 90 and round(90 * 0.8) == 72 and round(100 * 0.1) == 10 and round(10 * 0.2) == 2
+      and 72 + 2 == 74 and 74 / 100 == 0.74)
 rng = np.random.default_rng(3)
 moved = 0
 for _ in range(n_try):
@@ -328,7 +351,9 @@ check(f"两行数加得上：终止 + 超时 = {endings['终止']} + {endings['�
 check("超时收场时正站在第 3 格（离终点一步）的有 14 局", last_cell_on_timeout[3] == 14)
 g_z_70 = -math.cos(math.radians(70))
 print(f"机器人倾斜 70° 时，投影重力的第 3 项 g_z = −cos 70° = {g_z_70:.3f}（站直时是 −1）")
-check("倾斜 70° 时 g_z ≈ −0.34（第 2 章 2.4 节的摔倒判据）", round(g_z_70, 2) == -0.34)
+check("倾斜 70° 时 g_z ≈ −0.34（第 2 章 2.4 节的摔倒判据；三位小数是 −0.342）", round(g_z_70, 2) == -0.34 and round(g_z_70, 3) == -0.342)
+check("20 秒合多少步：1 秒 1 ÷ 0.02 = 50 步，20 秒 20 × 50 = 1000 步", round(1 / 0.02) == 50 and 20 * 50 == 1000
+      and math.ceil(20.0 / (4 * 0.005)) == 20 * 50)
 episode_steps = math.ceil(20.0 / (4 * 0.005))
 print(f"机器人：一局最长 20 秒 ÷ 每步 0.02 秒 = {episode_steps} 步；而每只机器人攒够 24 步就训练一次：{episode_steps} ÷ 24 = "
       f"{episode_steps / 24:.2f}")
@@ -377,8 +402,40 @@ check("第一局 [−0.05, −0.05, −0.05, 1]：γ = 1 → 0.85，0.99 → 0.8
 check("字面值重算 γ = 0.9：−0.05 − 0.045 − 0.0405 + 0.729 = 0.5935", round(-0.05 - 0.045 - 0.0405 + 0.729, 4) == 0.5935)
 check("字面值重算 γ = 1：−0.05 × 3 + 1 = 0.85", round(-0.05 * 3 + 1, 2) == 0.85)
 check("四个分分别乘 1、0.9、0.81、0.729（0.9 的 0、1、2、3 次方）", [round(0.9 ** k, 3) for k in range(4)] == [1.0, 0.9, 0.81, 0.729])
+check("γ = 0.99 那一行（字面值重算）：0.99² = 0.9801，0.99³ = 0.970299；1 + 0.99 + 0.9801 = 2.9701；−0.05 × 2.9701 + 0.970299 = 0.821794",
+      round(0.99 ** 2, 4) == 0.9801 and round(0.99 ** 3, 6) == 0.970299 and round(1 + 0.99 + 0.9801, 4) == 2.9701
+      and round(-0.05 * 2.9701 + 0.970299, 6) == 0.821794 and round(-0.05 * (1 + 0.99 + 0.99 ** 2) + 0.99 ** 3, 6) == 0.821794)
+check("γ = 0.5 那一行（字面值重算）：1 + 0.5 + 0.25 = 1.75；−0.05 × 1.75 + 0.125 = 0.0375",
+      1 + 0.5 + 0.25 == 1.75 and round(-0.05 * 1.75 + 0.125, 4) == 0.0375 and 0.5 ** 3 == 0.125)
+check("第 3 步的 +1 要乘 γ³：γ = 1、0.99、0.9、0.5 时依次是 1、0.970299、0.729、0.125",
+      [round(g ** 3, 6) for g in (1.0, 0.99, 0.9, 0.5)] == [1.0, 0.970299, 0.729, 0.125])
+pen = {g: -0.05 * sum(g ** k for k in range(3)) for g in (1.0, 0.5)}   # 三个扣分打完折加起来
+check("扣分相对越来越显眼：γ = 1 时三个扣分 −0.15 对 +1；γ = 0.5 时扣分 −0.0875 对打折后的 0.125",
+      round(pen[1.0], 4) == -0.15 and round(pen[0.5], 4) == -0.0875 and 0.5 ** 3 == 0.125)
 G0_js = 0 + 0.9 * (0 + 0.9 * (1 + 0.9 * 0))   # JS 的 reduceRight 按同样的顺序算
 check("reduceRight 一步步算出的数打印出来正好是 0.81（浏览器和 Python 用的是同一种小数）", repr(G0_js) == "0.81")
+
+print("\n为什么两种算法同一个数：把共同的 0.9 提到括号外")
+print(f"  0 + 0.9 × 0 + 0.9 × (0.9 × 1) = {0 + 0.9 * 0 + 0.9 * (0.9 * 1):g}；0 + 0.9 × (0 + 0.9 × 1) = {0 + 0.9 * (0 + 0.9 * 1):g}")
+check("提公因数：0 + 0.9 × 0 + 0.9 × (0.9 × 1) = 0 + 0.9 × (0 + 0.9 × 1) = 0 + 0.9 × 0.9 = 0.81；分配律 2 × 4 + 3 × 4 = (2 + 3) × 4 = 20；0.9² = 0.9 × 0.9",
+      math.isclose(0 + 0.9 * 0 + 0.9 * (0.9 * 1), 0 + 0.9 * (0 + 0.9 * 1)) and round(0 + 0.9 * 0.9, 10) == 0.81
+      and 2 * 4 + 3 * 4 == (2 + 3) * 4 == 20 and math.isclose(0.9 ** 2, 0.9 * 0.9)
+      and math.isclose(G_three[0], three[0] + 0.9 * G_three[1]) and math.isclose(G_three[1], three[1] + 0.9 * G_three[2]))
+rng_seq = np.random.default_rng(5)
+check("一般地 G_t = r_t + γ G_{t+1}：随机抽 20 条奖励序列、四个 γ，从前往后逐项打折和从后往前递推处处相同",
+      all(math.isclose(forward_return(list(seq[t:]), g), discounted_return(list(seq[t:]), g), abs_tol=1e-12)
+          and math.isclose(discounted_return(list(seq[t:]), g), seq[t] + g * discounted_return(list(seq[t + 1:]), g), abs_tol=1e-12)
+          for seq in rng_seq.normal(size=(20, 12)) for g in (0.5, 0.9, 0.99, 1.0) for t in range(11)))
+terms_forward = sum(range(1, 1001))                     # 1000 步：G_0 加 1000 项，G_1 加 999 项……G_999 加 1 项
+check(f"1000 步的一局：从前往后各算一遍要加 1000 + 999 + … + 1 = {terms_forward:,} 项（首尾配对 500 对 × 1001）；倒着算 1000 次",
+      terms_forward == 500_500 == 500 * 1001 and 1000 + 1 == 999 + 2 == 1001)
+check("逐项对照表：γ⁰ = 1（2⁰ = 1）；0 × 1 + 0 × 0.9 + 1 × 0.81 = 0.81；第 k 项是 γ^k × r_{t+k}",
+      0.9 ** 0 == 1 and 2 ** 0 == 1 and round(0 * 1 + 0 * 0.9 + 1 * 0.81, 10) == 0.81
+      and [round(0.9 ** k * r, 10) for k, r in enumerate(three)] == [0, 0, 0.81])
+G_loop, t0 = 0.0, 0                                     # 正文的 JS for 循环：照定义从前往后加
+for k in range(len(three) - t0):
+    G_loop += 0.9 ** k * three[t0 + k]
+check("照定义的 for 循环（JS 里同样的写法）打印出来也正好是 0.81", repr(G_loop) == "0.81")
 
 # ---------------------------------------------------------------------------
 banner("6b. 画图：figures/ch09_return_by_hand.png（三步经历 [0, 0, 1] 的回报，两种算法）")
@@ -441,6 +498,26 @@ check("0.9^7 = 0.478（7 步 = 0.14 秒就不到一半），0.9^10 = 0.349", rou
       and round(0.9 ** 10, 3) == 0.349)
 check("0.99^10 = 0.904，0.99^50 = 0.605；γ = 0.9 时 50 步（1 秒）后只算 0.00515",
       round(0.99 ** 10, 3) == 0.904 and round(0.99 ** 50, 3) == 0.605 and round(0.9 ** 50, 5) == 0.00515)
+check("步数 × 0.02 = 秒数：50 × 0.02 = 1，100 × 0.02 = 2", math.isclose(50 * STEP_SECONDS, 1) and math.isclose(100 * STEP_SECONDS, 2))
+
+print(f"\n一半落在第几步。试：{GAMMA:g}^{half_life - 1} = {GAMMA ** (half_life - 1):.4f} 还比一半多，"
+      f"{GAMMA:g}^{half_life} = {GAMMA ** half_life:.4f} 第一次跌破")
+k_half = math.log(0.5) / math.log(GAMMA)
+k_half_09 = math.log(0.5) / math.log(0.9)
+print(f"用 ln：ln 0.5 = {math.log(0.5):.4f}，ln {GAMMA:g} = {math.log(GAMMA):.5f}，k = ln 0.5 ÷ ln {GAMMA:g} = {k_half:.2f}；"
+      f"γ = 0.9：ln 0.9 = {math.log(0.9):.4f}，k = {k_half_09:.2f}")
+check("试出来：0.99^60 = 0.547、0.99^70 = 0.495（答案在 60 和 70 之间）；0.99^68 = 0.5049 还比一半多，0.99^69 = 0.4998 第一次跌破",
+      round(0.99 ** 60, 3) == 0.547 and round(0.99 ** 70, 3) == 0.495 and round(0.99 ** 68, 4) == 0.5049
+      and round(0.99 ** 69, 4) == 0.4998 and 0.99 ** 68 > 0.5 > 0.99 ** 69)
+check("用 ln 算：ln 0.5 = −0.6931，ln 0.99 = −0.01005，k = ln 0.5 ÷ ln 0.99 = 68.97；字面值 (−0.6931) ÷ (−0.01005) → 68.97；"
+      "ln(0.99^k) = k × ln 0.99；第一次跌破一半的整数步就是 68.97 往上取整",
+      round(math.log(0.5), 4) == -0.6931 and round(math.log(0.99), 5) == -0.01005 and round(k_half, 2) == 68.97
+      and round(-0.6931 / -0.01005, 2) == 68.97 and math.isclose(math.log(0.99 ** 69), 69 * math.log(0.99))
+      and math.ceil(k_half) == half_life)
+check("γ = 0.9：ln 0.9 = −0.1054，(−0.6931) ÷ (−0.1054) = 6.58 → 第 7 步第一次跌破一半（0.9^6 = 0.531，0.9^7 = 0.478）；ln 1 = 0",
+      round(math.log(0.9), 4) == -0.1054 and round(-0.6931 / -0.1054, 2) == 6.58 and round(k_half_09, 2) == 6.58
+      and math.ceil(k_half_09) == half_life_09 == 7 and round(0.9 ** 6, 3) == 0.531 and round(0.9 ** 7, 3) == 0.478
+      and math.log(1) == 0)
 
 print("每一步都拿 1 分、一直拿下去，打折后的总分（前 n 项加起来）：")
 partial = {n: sum(GAMMA ** k for k in range(n)) for n in (1, 2, 100, 500, 2000)}
@@ -450,9 +527,36 @@ check("1 + 0.99 = 1.99；前 100 项 63.40；前 500 项 99.34；越加越靠近
       and round(1 / (1 - 0.99)) == 100 and abs(partial[2000] - 100) < 0.001)
 check("γ = 0.5 的迷你版：1 + 0.5 + 0.25 + 0.125 = 1.875，再加下去靠近 1/(1 − 0.5) = 2",
       1 + 0.5 + 0.25 + 0.125 == 1.875 and abs(sum(0.5 ** k for k in range(60)) - 2) < 1e-12)
+
+print("\n错开一格相减（第一步：0.5、只加四项）：")
+S4 = [0.5 ** k for k in range(4)]                       # 1, 0.5, 0.25, 0.125
+S4_half = [0.5 * x for x in S4]                         # 每一项乘 0.5，正好变成它右边那一项
+print(f"  S₄ = {' + '.join(f'{x:g}' for x in S4)} = {sum(S4):g}")
+print(f"  0.5 × S₄ = {' + '.join(f'{x:g}' for x in S4_half)} = {sum(S4_half):g}")
+print(f"  相减：{sum(S4):g} − {sum(S4_half):g} = 1 − {S4_half[-1]:g} = {sum(S4) - sum(S4_half):g}；S₄ = {sum(S4) - sum(S4_half):g} × 2 = {2 * (sum(S4) - sum(S4_half)):g}")
+check("第一步：0.5 × S₄ 的每一项是 S₄ 里右边那一项（0.5、0.25、0.125），末尾多出 0.0625；S₄ − 0.5 × S₄ = 1 − 0.0625 = 0.9375；0.9375 × 2 = 1.875",
+      S4_half[:3] == S4[1:] and S4_half[3] == 0.0625 and sum(S4) - sum(S4_half) == 1 - 0.0625 == 0.9375
+      and 0.9375 / 0.5 == 0.9375 * 2 == 1.875 == sum(S4))
+check("第二步：前 n 项 S_n = 100 × (1 − 0.99ⁿ)，n = 1、2、100、500、2000 都和一项一项加的一样",
+      all(math.isclose(sum(0.99 ** k for k in range(n)), 100 * (1 - 0.99 ** n), rel_tol=1e-12) for n in (1, 2, 100, 500, 2000)))
+check("代回去核对（字面值）：100 × (1 − 0.9801) = 1.99；100 × (1 − 0.366) = 63.4；100 × (1 − 0.00657) = 99.343；0.99^500 = 0.00657",
+      round(100 * (1 - 0.9801), 2) == 1.99 and round(100 * (1 - 0.366), 1) == 63.4 and round(100 * (1 - 0.00657), 3) == 99.343
+      and round(0.99 ** 500, 5) == 0.00657 and round(0.99 ** 2, 4) == 0.9801)
+check("第三步：差的那一点正好是 100 × 0.99ⁿ——前 500 项差 0.657，前 2000 项差不到 0.000001；永远是正数，所以永远不超过 100",
+      round(100 * 0.99 ** 500, 3) == 0.657 and 100 * 0.99 ** 2000 < 1e-6
+      and all(100 - sum(0.99 ** k for k in range(n)) > 0 for n in (1, 2, 100, 500)))
+check(f"第四步：一般地 S_n = (1 − γⁿ)/(1 − γ)（γ = 0.5、0.9、0.99、当前的 {GAMMA:g} 都成立）；1 ÷ 0.1 = 10，1 ÷ 0.01 = 100；γ = 1 时 n 项就是 n",
+      all(math.isclose(sum(g ** k for k in range(n)), (1 - g ** n) / (1 - g), rel_tol=1e-12)
+          for g in (0.5, 0.9, 0.99, GAMMA) for n in (1, 4, 50, 300))
+      and round(1 / 0.1) == 10 and round(1 / 0.01) == 100 and all(sum(1.0 ** k for k in range(n)) == n for n in (10, 1000)))
+check("视界：1 − 0.99 = 0.01，1 ÷ 0.01 = 100；另一种推法 S = 1 + γS 代回去：1 + 0.99 × 100 = 1 + 99 = 100",
+      math.isclose(1 - 0.99, 0.01) and round(1 / 0.01) == 100 and math.isclose(1 + 0.99 * 100, 100) and 1 + 99 == 100)
 check("1/(1 − 0.9) = 10；自测 γ = 0.95：1/(1 − 0.95) = 20", round(1 / (1 - 0.9)) == 10 and round(1 / (1 - 0.95)) == 20)
 check("自测 γ = 0.95：0.95^13 = 0.513，0.95^14 = 0.488 —— 13 到 14 步之间剩一半（约 0.27 秒）",
       round(0.95 ** 13, 3) == 0.513 and round(0.95 ** 14, 3) == 0.488 and round(13.5 * STEP_SECONDS, 2) == 0.27)
+check("自测用 ln：ln 0.95 = −0.0513，(−0.6931) ÷ (−0.0513) = 13.51（实算 13.51）；1 ÷ 0.05 = 20",
+      round(math.log(0.95), 4) == -0.0513 and round(-0.6931 / -0.0513, 2) == 13.51
+      and round(math.log(0.5) / math.log(0.95), 2) == 13.51 and round(1 / 0.05) == 20)
 g100 = math.sqrt(0.99)
 print(f"换成 100 Hz、想保持“每秒打的折”不变：γ_100 = √0.99 = {g100:.5f}；它的 200 次方 = {g100 ** 200:.3f}，和 0.99^100 一样")
 check("√0.99 = 0.99499；0.99499^200 = 0.366 = 0.99^100（2 秒在 100 Hz 下是 200 步）",
@@ -461,6 +565,8 @@ check("字面值重算：1/e = 0.3679，和 0.99^100 = 0.366 差不多（第 1 �
 check("γ 越接近 1，第 1/(1 − γ) 步的折扣越接近 1/e：0.9^10 = 0.349，0.99^100 = 0.366，0.999^1000 = 0.3677",
       round(0.9 ** 10, 3) == 0.349 and round(0.99 ** 100, 3) == 0.366 and round(0.999 ** 1000, 4) == 0.3677)
 check("100 Hz 走两步 = 50 Hz 走一步：0.99499 × 0.99499 ≈ 0.99", round(0.99499 * 0.99499, 4) == 0.99)
+check("200 个 √0.99 两两配对、每对乘出 0.99，一共 100 对：(√0.99)^200 = 0.99^100",
+      math.isclose(g100 ** 200, 0.99 ** 100, rel_tol=1e-9) and math.isclose(g100 * g100, 0.99) and 200 // 2 == 100)
 
 # ---------------------------------------------------------------------------
 banner("7b. 画图：figures/ch09_discount.png（γ^k 怎样随步数衰减）")
@@ -597,6 +703,104 @@ print(f"只拿这两局取平均：({round(G0_a[GAMMA], 3)} + {round(G0_b, 3)}) 
 check("迷你版的“取平均”：(0.822 + 0.706) ÷ 2 = 0.764；两局还不够，2000 局的平均是 0.703",
       round(two_mean, 3) == 0.764 and round((0.822 + 0.706) / 2, 3) == 0.764
       and round(float(returns_right.mean()), 3) == 0.703)
+
+five = [0.99 ** k for k in range(5)]                    # 第二局：五个扣分各乘的折扣
+print(f"\n第二局的 G_0 一步一步：括号里五项 {' + '.join(f'{x:.6g}' for x in five)} = {sum(five):.6f}；"
+      f"100 × (1 − 0.99⁵) = {100 * (1 - 0.99 ** 5):.6f}；0.99⁵ = {0.99 ** 5:.5f}")
+check("第二局（字面值重算）：1 + 0.99 + 0.9801 + 0.970299 + 0.960596 = 4.900995 → 4.901；100 × (1 − 0.95099) = 4.901；0.99⁵ → 0.95099 → 0.951；"
+      "−0.05 × 4.901 = −0.24505 → −0.245；−0.245 + 0.951 = 0.706",
+      round(1 + 0.99 + 0.9801 + 0.970299 + 0.960596, 6) == 4.900995 and round(4.900995, 3) == 4.901
+      and round(100 * (1 - 0.95099), 3) == 4.901 and round(0.99 ** 5, 5) == 0.95099 and round(0.95099, 3) == 0.951
+      and round(0.99 ** 4, 6) == 0.960596 and round(-0.05 * 4.901, 5) == -0.24505 and round(-0.24505, 3) == -0.245
+      and round(-0.245 + 0.951, 3) == 0.706 and math.isclose(sum(five), 100 * (1 - 0.99 ** 5)))
+check("期望 = 每种结果 × 它的概率再加起来（第 4 章 4.3 节的转盘：0 × 0.5 + 5 × 0.3 + 20 × 0.2 = 5.5）",
+      math.isclose(0 * 0.5 + 5 * 0.3 + 20 * 0.2, 5.5))
+check("粗算：随机乱按 19 步里前 18 步各扣 0.05，18 × 0.05 = 0.9；九成按 → 多走 7.25 − 6.09 = 1.16 步",
+      math.isclose(18 * 0.05, 0.9) and round(7.25 - 6.09, 2) == 1.16)
+
+print("\n期望到底在加什么：“总是按 →”按步数分组（不抽样：每走一步，把“现在站在哪一格”的概率往前推一遍）")
+
+
+def length_distribution(p_right, limit=TIME_LIMIT):
+    """返回 ({第几步踩上终点: 概率}, 走满 limit 步还没到的概率)。每一步把“站在每一格的概率”按规矩表往前推。"""
+    where = np.zeros(N_CELLS)
+    where[START] = 1.0
+    p_end = {}
+    for n in range(1, limit + 1):
+        nxt = np.zeros(N_CELLS)
+        for s in range(N_CELLS):
+            if s == GOAL or where[s] == 0:
+                continue
+            for a, p_a in ((RIGHT, p_right), (LEFT, 1 - p_right)):
+                for s_next, p, _, _ in outcomes(s, a):
+                    nxt[s_next] += where[s] * p_a * p
+        p_end[n] = float(nxt[GOAL])
+        nxt[GOAL] = 0.0
+        where = nxt
+    return p_end, float(where.sum())
+
+
+def return_of_length(n, ended=True):
+    """走了 n 步的一局的回报：前面每步扣分，终止的话最后一步拿终点的分；超时的话 n 步全是扣分。"""
+    rewards = [STEP_REWARD] * (n - 1) + [GOAL_REWARD] if ended else [STEP_REWARD] * n
+    return discounted_return(rewards, GAMMA)
+
+
+def patterns(n):
+    """“总是按 →”走 n 步、第 n 步正好踩上终点的“照办 / 打滑”组合有几种。"""
+    count = 0
+    for slips in product((False, True), repeat=n):
+        s = START
+        for i, slipped in enumerate(slips):
+            s = min(max(s + (-1 if slipped else 1), 0), N_CELLS - 1)
+            if s == GOAL:
+                break
+        count += int(s == GOAL and i == n - 1)
+    return count
+
+
+p_len, p_cut = length_distribution(1.0)
+G_len = {n: return_of_length(n) for n in (4, 5, 6)}
+r4 = {n: (round(p_len[n], 4), round(G_len[n], 4)) for n in (4, 5, 6)}       # 正文表里取四位小数，再相乘
+rows = [[n, f"{p:.4f}", f"{g:.4f}", f"{p * g:.4f}"] for n, (p, g) in r4.items()]
+table(["这一局走了几步", "这种局的概率", "这种局的回报", "概率 × 回报（四位小数相乘）"], rows)
+first3_p = sum(p_len[n] for n in (4, 5, 6))
+first3_e = sum(p_len[n] * G_len[n] for n in (4, 5, 6))
+E_all = sum(p * return_of_length(n) for n, p in p_len.items()) + p_cut * return_of_length(TIME_LIMIT, ended=False)
+print(f"前三组合计：概率 {first3_p:.4f}，概率 × 回报 {first3_e:.4f}；所有组（4 到 {TIME_LIMIT} 步，外加超时的 {p_cut:.1e}）"
+      f"全部加起来 {E_all:.4f}；走法的花样：4 步 {patterns(4)} 种，5 步 {patterns(5)} 种，6 步 {patterns(6)} 种")
+check("4 步：0.8 × 0.8 × 0.8 × 0.8 = 0.4096；5 步：0.2 × 0.4096 = 0.08192（只能是开头在墙边打滑）；"
+      "6 步：0.8⁵ × 0.2 = 0.065536，0.2 × 0.2 × 0.8⁴ = 0.016384，3 × 0.065536 + 0.016384 = 0.212992",
+      math.isclose(p_len[4], 0.4096) and math.isclose(p_len[5], 0.2 * 0.4096) and math.isclose(0.2 * 0.4096, 0.08192)
+      and math.isclose(p_len[6], 3 * 0.065536 + 0.016384) and math.isclose(0.8 ** 5 * 0.2, 0.065536)
+      and math.isclose(0.2 * 0.2 * 0.8 ** 4, 0.016384) and math.isclose(3 * 0.065536 + 0.016384, 0.212992))
+check("走法的花样越来越多：4 步只有 1 种，5 步 1 种（开头撞墙），6 步 4 种（中途某格退一格 3 种 + 开头连滑两次 1 种）",
+      [patterns(n) for n in (4, 5, 6)] == [1, 1, 4])
+check("三组的回报（字面值）：4 步 0.8218；5 步 1 + 0.99 + 0.9801 + 0.970299 = 3.940399，−0.05 × 3.940399 + 0.960596 = 0.763576 → 0.7636；6 步 0.7059",
+      round(G_len[4], 4) == 0.8218 and round(G_len[5], 6) == 0.763576 and round(G_len[6], 4) == 0.7059
+      and round(1 + 0.99 + 0.9801 + 0.970299, 6) == 3.940399 and round(-0.05 * 3.940399 + 0.960596, 6) == 0.763576
+      and round(0.763576, 4) == 0.7636)
+check("期望表（四位小数，字面值重算）：0.4096 × 0.8218 → 0.3366；0.0819 × 0.7636 → 0.0625；0.2130 × 0.7059 → 0.1504；"
+      "0.4096 + 0.0819 + 0.2130 = 0.7045；0.3366 + 0.0625 + 0.1504 = 0.5495（和不舍入算的一样）",
+      [r[1:] for r in rows] == [["0.4096", "0.8218", "0.3366"], ["0.0819", "0.7636", "0.0625"], ["0.2130", "0.7059", "0.1504"]]
+      and round(0.4096 * 0.8218, 4) == 0.3366 and round(0.0819 * 0.7636, 4) == 0.0625 and round(0.2130 * 0.7059, 4) == 0.1504
+      and round(0.4096 + 0.0819 + 0.2130, 4) == 0.7045 and round(0.3366 + 0.0625 + 0.1504, 4) == 0.5495
+      and round(first3_p, 4) == 0.7045 and round(first3_e, 4) == 0.5495)
+check("前三组占七成（0.7045），剩下约三成（1 − 0.7045 = 0.2955）分散在 7 到 50 步和超时里",
+      round(1 - first3_p, 4) == 0.2955 and round(1 - 0.7045, 4) == 0.2955 and p_len[7] > 0 and p_len[TIME_LIMIT] > 0)
+check(f"所有组的“概率 × 回报”全部加起来 = {E_all:.4f}，就是不抽样的精确值 {results['总是按 →'][2]:.4f}；所有组的概率加起来是 1",
+      math.isclose(E_all, results["总是按 →"][2], rel_tol=1e-9) and math.isclose(sum(p_len.values()) + p_cut, 1.0)
+      and round(E_all, 4) == 0.7015)
+print("抽 2000 局数出来的各组比例：" + "，".join(
+    f"{n} 步 {int(np.sum(lengths_right == n))} 局（{int(np.sum(lengths_right == n)) / N_EPISODES:.4f}，概率 {p_len[n]:.4f}）"
+    for n in (4, 5, 6)))
+check("抽样数出来的各组比例都靠近自己的概率（4、5、6 步三组都差不到 4 倍标准误差）：直方图 ③ 就是这张表的抽样版",
+      all(abs(np.sum(lengths_right == n) / N_EPISODES - p_len[n]) < 4 * math.sqrt(p_len[n] * (1 - p_len[n]) / N_EPISODES)
+          for n in (4, 5, 6)))
+n_five, n_six = int(np.sum(lengths_right == 5)), int(np.sum(lengths_right == 6))
+check("正文读图段引用的柱高（种子固定）：5 步 173 局、6 步 410 局；173 ÷ 2000 = 0.0865，410 ÷ 2000 = 0.2050，对表里的 0.0819、0.2130",
+      n_five == 173 and n_six == 410 and 173 / 2000 == 0.0865 and 410 / 2000 == 0.205
+      and round(p_len[5], 4) == 0.0819 and round(p_len[6], 4) == 0.2130)
 
 # ---------------------------------------------------------------------------
 banner("8b. 画图：figures/ch09_reward_return_value.png（奖励 / 回报 / 很多局回报的平均）")
@@ -736,6 +940,12 @@ if mjlab_dir and (mjlab_dir / "tasks" / "velocity" / "velocity_env_cfg.py").is_f
           lines_in_order(term_text, ["def time_out(env: ManagerBasedRlEnv) -> torch.Tensor:",
                                      "return env.episode_length_buf >= env.max_episode_length", "def bad_orientation(",
                                      "return torch.acos(-projected_gravity[:, 2]).abs() > limit_angle"]))
+    obs_text = (mjlab_dir / "tasks" / "velocity" / "mdp" / "observations.py").read_text(encoding="utf-8")
+    check("9.3 节 critic 多看的脚上四块：velocity_env_cfg.py 的 critic_terms 里依次是 foot_height、foot_air_time、foot_contact、"
+          "foot_contact_forces；mdp/observations.py 里接触力按“脚数 × 3”摊平",
+          lines_in_order(vel_text, ["critic_terms = {", '"foot_height": ObservationTermCfg(', '"foot_air_time": ObservationTermCfg(',
+                                    '"foot_contact": ObservationTermCfg(', '"foot_contact_forces": ObservationTermCfg('])
+          and lines_in_order(obs_text, ["def foot_contact_forces(", "forces_flat = sensor_data.force.flatten(start_dim=1)  # [B, N*3]"]))
     env_text = (mjlab_dir / "envs" / "manager_based_rl_env.py").read_text(encoding="utf-8")
     check("mjlab/envs/manager_based_rl_env.py：一步 = 物理小步 × decimation；一局的步数 = 秒数 ÷ 一步的秒数，向上取整",
           lines_in_order(env_text, ["return self.cfg.sim.mujoco.timestep * self.cfg.decimation",

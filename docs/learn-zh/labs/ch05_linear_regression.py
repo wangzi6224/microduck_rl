@@ -18,7 +18,7 @@ from matplotlib.patches import FancyArrowPatch
 from matplotlib.ticker import FixedLocator, FuncFormatter, NullLocator
 
 from _common import banner, check, done, lines_in_order, savefig, table
-from _draw import (BLUE, CELL_HOT, FAINT, FS_NOTE, FS_SMALL, FS_STEP, FS_TICK, FS_TITLE, GREEN, INK, MUTED, ORANGE,
+from _draw import (BLUE, CELL, CELL_HOT, FAINT, FS_NOTE, FS_SMALL, FS_STEP, FS_TICK, FS_TITLE, GREEN, INK, MUTED, ORANGE,
                    WHITE_BOX, arrow, cell, data_axes, hand, lesson_cells, lesson_figure, lesson_panel, note, panel_note,
                    panel_title, plt)
 
@@ -58,6 +58,75 @@ table(["里程 x", "车费 y", "预测 wx+b", "误差 e", "误差平方"],
       [[f"{x:g}", f"{y:g}", f"{p:g}", f"{e:g}", f"{e * e:g}"] for x, y, p, e in zip(X2, Y2, pred0, err0)])
 print(f"损失 = (4 + 9) / 2 = {L0:g}")
 print(f"∂L/∂w = (2×(−2)×1 + 2×(−3)×2) / 2 = {dw0:g}；∂L/∂b = (2×(−2) + 2×(−3)) / 2 = {db0:g}")
+
+
+# --- 第二件事的两种量法（正文 5.1 节"第二件事"和"一步一步推"）：先缩 h，再拆开看 ①–⑤ ---
+def loss2(w, b):
+    """两张收据上的均方误差。"""
+    return mean((w * X2 + b - Y2) ** 2)
+
+
+H1 = 0.01
+pw, pb = (W0 + H1) * X2 + B0, W0 * X2 + B0 + H1          # w 拧 0.01、b 拧 0.01 之后的预测
+ew, eb = pw - Y2, pb - Y2
+Lw, Lb = loss2(W0 + H1, B0), loss2(W0, B0 + H1)
+sw, sb = (Lw - L0) / H1, (Lb - L0) / H1
+sw3, sb3 = (loss2(W0 + 0.001, B0) - L0) / 0.001, (loss2(W0, B0 + 0.001) - L0) / 0.001
+print(f"\n第二件事，先缩 h：w 拧到 1.01 → 预测 {pw[0]:g}、{pw[1]:g}，误差 {ew[0]:g}、{ew[1]:g}，"
+      f"平方 {ew[0] ** 2:.4f}、{ew[1] ** 2:.4f}，损失 {Lw:.5f}，变化率 {sw:.3f}")
+print(f"                  b 拧到 0.01 → 误差 {eb[0]:g}、{eb[1]:g}，损失 {Lb:.4f}，变化率 {sb:.2f}；h = 0.001 时 {sw3:.4f}、{sb3:.3f}")
+check("缩 h（w 拧 0.01）：预测 1.01、2.02，误差 −1.99、−2.98，平方 3.9601、8.8804；(3.9601 + 8.8804)/2 = 6.42025，(6.42025 − 6.5)/0.01 = −7.975",
+      np.allclose(pw, [1.01, 2.02]) and np.allclose(ew, [-1.99, -2.98]) and np.allclose(ew ** 2, [3.9601, 8.8804])
+      and math.isclose(Lw, 6.42025) and math.isclose(sw, -7.975)
+      and round((3.9601 + 8.8804) / 2, 10) == 6.42025 and round((6.42025 - 6.5) / 0.01, 10) == -7.975)
+check("缩 h（b 拧 0.01）：误差 −1.99、−2.99；(3.9601 + 8.9401)/2 = 6.4501，(6.4501 − 6.5)/0.01 = −4.99",
+      np.allclose(eb, [-1.99, -2.99]) and math.isclose(Lb, 6.4501) and math.isclose(sb, -4.99)
+      and round((3.9601 + 8.9401) / 2, 10) == 6.4501 and round((6.4501 - 6.5) / 0.01, 10) == -4.99)
+check("h 缩到 0.001：−7.9975、−4.999，一个靠近 −8，一个靠近 −5", round(sw3, 4) == -7.9975 and round(sb3, 4) == -4.999)
+check("按字面值：6.42025 − 6.5 = −0.07975；① w 多 0.01，1 公里多 1 × 0.01 = 0.01、2 公里多 2 × 0.01 = 0.02",
+      round(6.42025 - 6.5, 10) == -0.07975 and math.isclose(Lw - L0, -0.07975) and round(1 * 0.01, 10) == 0.01
+      and round(2 * 0.01, 10) == 0.02 and np.allclose(pw - pred0, [0.01, 0.02]))
+
+E_SQ, D_SQ = 3.0, 0.02             # ③ 的正方形：边长 3（误差 3 的平方），边长多出 Δ = 0.02；图 ch05_square.png 用同一组数
+strips, corner = 2 * E_SQ * D_SQ, D_SQ * D_SQ
+grown = (E_SQ + D_SQ) ** 2 - E_SQ ** 2
+print(f"③ 2 公里那张：误差 −3 → −2.98，平方 9 → {2.98 ** 2:.4f}（少了 {9 - 2.98 ** 2:.4f}）；2 × (−3) × 0.02 = {2 * -3 * 0.02:g}")
+print(f"   正方形：两条长条 2 × 3 × 0.02 = {strips:g}，小角 0.02 × 0.02 = {corner:g}，合起来 {strips + corner:g} = 3.02² − 9 = {grown:.4f}")
+check("③ 2 公里那张：误差 −3 → −2.98，平方 9 → 8.8804，少了 0.1196；2 × (−3) × 0.02 = −0.12，只差 0.0004",
+      math.isclose(ew[1] ** 2 - err0[1] ** 2, -0.1196) and round(2.98 ** 2, 10) == 8.8804 and round(9 - 8.8804, 10) == 0.1196
+      and round(2 * -3 * 0.02, 10) == -0.12 and round(0.12 - 0.1196, 10) == 0.0004)
+check("面积：3 × 3 = 9，长条 3 × 0.02 = 0.06（两条共 0.12），小角 0.0004，合起来 0.1204 = 3.02² − 9 = 9.1204 − 9；补课：9 + 0.06 + 0.06 + 0.0004 = 9.1204；Δ 是边长的 1/150",
+      math.isclose(strips, 0.12) and math.isclose(corner, 0.0004) and math.isclose(grown, 0.1204) and round(3.02 ** 2, 10) == 9.1204
+      and 3 * 3 == 9 and round(3 * 0.02, 10) == 0.06 and round(0.12 + 0.0004, 10) == 0.1204 and round(9.1204 - 9, 10) == 0.1204
+      and round(9 + 0.06 + 0.06 + 0.0004, 10) == 9.1204 and round(E_SQ / D_SQ, 6) == 150
+      and all((2 * xv + 1) ** 2 == 4 * xv ** 2 + 4 * xv + 1 for xv in range(-3, 4)))
+rows_sq = [[f"{d:g}", f"{2 * E_SQ * d:g}", f"{(E_SQ + d) ** 2 - E_SQ ** 2:.4g}", f"{d * d:g}"] for d in (1, 0.1, 0.01)]
+table(["Δ", "两条长条 2×3×Δ", "实际多出 (3+Δ)²−9", "小角 Δ×Δ"], rows_sq)
+check("小角那张表：Δ = 1、0.1、0.01 时长条 6、0.6、0.06，实际多出 7、0.61、0.0601，小角 1、0.01、0.0001（Δ 越小，小角越不起眼）",
+      [r[1:] for r in rows_sq] == [["6", "7", "1"], ["0.6", "0.61", "0.01"], ["0.06", "0.0601", "0.0001"]]
+      and round(2 * 3 * 0.1, 10) == 0.6 and round(3.1 * 3.1, 10) == 9.61 and round(9.61 - 9, 10) == 0.61
+      and round(0.61 - 0.6, 10) == 0.01 == round(0.1 * 0.1, 10))
+check("误差是负数也成立：边长 3 缩成 2.98，9 − 0.12 + 0.0004 = 8.8804 = 2.98²",
+      round(9 - 0.12 + 0.0004, 10) == 8.8804 == round(2.98 ** 2, 10))
+g1, g2 = 2 * err0[0] * (X2[0] * H1), 2 * err0[1] * (X2[1] * H1)   # ④ 每张的"大约"：2 × 误差 × 误差的变化（误差的变化 = 里程 × 0.01）
+print(f"④ 两张合起来：大约 ({g1:g} + ({g2:g})) / 2 = {(g1 + g2) / 2:g}；实际 {Lw - L0:.5f}；差 {(Lw - L0) - (g1 + g2) / 2:.5f}")
+check("④ 1 公里那张 2 × (−2) × 0.01 = −0.04（实际 1.99² = 3.9601，少 0.0399）；(−0.04 − 0.12)/2 = −0.08，(−0.0399 − 0.1196)/2 = −0.07975，差 0.00025 = (0.0001 + 0.0004)/2",
+      math.isclose(g1, -0.04) and math.isclose(g2, -0.12) and math.isclose((g1 + g2) / 2, -0.08) and math.isclose(Lw - L0, -0.07975)
+      and round(2 * -2 * 0.01, 10) == -0.04 and round(1.99 ** 2, 10) == 3.9601 and round(4 - 3.9601, 10) == 0.0399
+      and round((-0.04 - 0.12) / 2, 10) == -0.08 and round((-0.0399 - 0.1196) / 2, 10) == -0.07975
+      and round(-0.07975 - -0.08, 10) == 0.00025 == round((0.0001 + 0.0004) / 2, 10))
+col_w, col_b = 2 * err0 * X2, 2 * err0                       # ⑤ 每张收据一行：2 × 误差 × 里程、2 × 误差
+table(["里程 x", "误差 e", "误差平方", "2 × 误差 × 里程", "2 × 误差"],
+      [[f"{xv:g}", f"{e:g}", f"{e * e:g}", f"{cw:g}", f"{cb:g}"] for xv, e, cw, cb in zip(X2, err0, col_w, col_b)]
+      + [["平均", "", f"{mean(err0 ** 2):g}", f"{mean(col_w):g}", f"{mean(col_b):g}"]])
+check("⑤ 各除以 0.01：−0.04 ÷ 0.01 = −4，−0.12 ÷ 0.01 = −12，平均 (−4 − 12)/2 = −8；b 那边缩 h 少了 0.0499，比 0.05 少 0.0001 = (0.0001 + 0.0001)/2",
+      round(-0.04 / 0.01, 10) == -4 and round(-0.12 / 0.01, 10) == -12 and (-4 - 12) / 2 == -8
+      and math.isclose(Lb - L0, -0.0499) and round(-0.0499 - -0.05, 10) == 0.0001 == round((0.0001 + 0.0001) / 2, 10))
+check("第一件事逐列：预测 1、2，误差 1 − 3 = −2、2 − 5 = −3；每张收据一行、三列各取平均：误差平方 4、9 → 6.5；2 × 误差 × 里程 −4、−12 → −8；2 × 误差 −4、−6 → −5",
+      list(pred0) == [1, 2] and list(err0) == [-2, -3] and 1 - 3 == -2 and 2 - 5 == -3
+      and list(err0 ** 2) == [4, 9] and list(col_w) == [-4, -12] and list(col_b) == [-4, -6]
+      and mean(err0 ** 2) == 6.5 and mean(col_w) == -8 and mean(col_b) == -5)
+print()
 print(f"拧一步（学习率 {LR}）：w = 1 − 0.1×(−8) = {w1:g}，b = 0 − 0.1×(−5) = {b1:g}")
 print(f"新预测 {pred1[0]:g}、{pred1[1]:g}；新误差 {err1[0]:g}、{err1[1]:g}；新损失 (0.49 + 0.81) / 2 = {L1:g}")
 print(f"收据里没有的 1.5 公里：拧之前猜 {W0 * 1.5 + B0:g} 元，拧一步后猜 {w1 * 1.5 + b1:g} 元")
@@ -67,8 +136,11 @@ check("梯度 −8、−5；按字面值重算：(−4 − 12)/2 = −8，(−4 
       math.isclose(dw0, -8) and math.isclose(db0, -5) and (2 * -2 * 1 + 2 * -3 * 2) / 2 == -8 and (2 * -2 + 2 * -3) / 2 == -5)
 check("拧一步：w = 1 − 0.1×(−8) = 1.8，b = 0 − 0.1×(−5) = 0.5",
       math.isclose(w1, 1.8) and math.isclose(b1, 0.5) and round(1 - 0.1 * -8, 10) == 1.8 and round(0 - 0.1 * -5, 10) == 0.5)
-check("新预测 2.3、4.1，新误差 −0.7、−0.9，新损失 (0.49 + 0.81)/2 = 0.65",
-      np.allclose(pred1, [2.3, 4.1]) and np.allclose(err1, [-0.7, -0.9]) and math.isclose(L1, 0.65)
+check("减去一个负数就是加：1 − (−0.8) = 1 + 0.8 = 1.8，0 − (−0.5) = 0.5",
+      round(1 - (-0.8), 10) == 1.8 == round(1 + 0.8, 10) and 0 - (-0.5) == 0.5 and math.isclose(0.1 * dw0, -0.8))
+check("新预测 2.3、4.1，新误差 2.3 − 3 = −0.7、4.1 − 5 = −0.9，平方 0.49、0.81，新损失 (0.49 + 0.81)/2 = 0.65",
+      np.allclose(pred1, [2.3, 4.1]) and np.allclose(err1, [-0.7, -0.9]) and np.allclose(err1 ** 2, [0.49, 0.81])
+      and math.isclose(L1, 0.65) and round(2.3 - 3, 10) == -0.7 and round(4.1 - 5, 10) == -0.9
       and round((0.49 + 0.81) / 2, 10) == 0.65)
 check("1.5 公里：拧之前 1 × 1.5 + 0 = 1.5 元，拧一步后 1.8 × 1.5 + 0.5 = 3.2 元；藏着的规则答 2 × 1.5 + 1 = 4 元",
       math.isclose(W0 * 1.5 + B0, 1.5) and math.isclose(w1 * 1.5 + b1, 3.2) and round(1.8 * 1.5 + 0.5, 10) == 3.2
@@ -83,7 +155,7 @@ check("和第 3 章 3.5 节是同一件事：三个点那一轮也是 22 → (1.
       math.isclose(L3a, 22) and math.isclose(w3a, 1.2) and math.isclose(b3a, 0.8) and math.isclose(L3b, 6.16))
 
 # ---------------------------------------------------------------------------
-banner("1b. 画图：figures/ch05_overview.png（5.0 节总览）和 figures/ch05_one_step.png（拧一步）")
+banner("1b. 画图：figures/ch05_overview.png（5.0 节总览）、figures/ch05_square.png（正方形多出两条长条和一个小角）和 figures/ch05_one_step.png（拧一步）")
 fig, axes = lesson_figure(4, "学习转一轮：预测、打分、拧旋钮，损失 6.5 → 0.65", panel_height=3.1)
 fig.subplots_adjust(right=0.84)
 ax = axes[0]
@@ -114,6 +186,43 @@ fig.add_artist(FancyArrowPatch((0.87, (top4.y0 + top4.y1) / 2), (0.87, (top2.y0 
                                connectionstyle="arc3,rad=0.28", arrowstyle="-|>", mutation_scale=26, lw=3.2, color=ORANGE))
 fig.text(0.895, (top2.y1 + top4.y0) / 2, "下\n一\n轮", fontsize=FS_STEP, color=ORANGE, ha="center", va="center", linespacing=1.25)
 savefig(fig, "ch05_overview")
+plt.close(fig)
+
+# 5.1 节第 ③ 步：误差的平方 = 正方形的面积；边长多出 Δ，面积多出两条长条和一个小角。数字和上面的 check 同源（E_SQ、D_SQ）。
+D_DRAW = 0.75                                     # 图上把 Δ 画成 0.75 宽——放大画的；手算用的是真实的 D_SQ = 0.02
+LIGHT_GREEN = "#dcefe6"
+fig = plt.figure(figsize=(9, 8.8))
+fig.suptitle("误差多一点，平方就多出两条长条和一个小角", fontsize=FS_TITLE, fontweight="bold", color=INK, y=0.985)
+ax = fig.add_axes([0.06, 0.41, 0.88, 0.46])
+ax.set_xlim(-0.8, 9.2)
+ax.set_ylim(-0.75, 4.35)
+ax.set_aspect("equal")
+ax.axis("off")
+for (x0, y0), wdt, hgt, fc, ec in (((0, 0), E_SQ, E_SQ, CELL, BLUE), ((E_SQ, 0), D_DRAW, E_SQ, CELL_HOT, ORANGE),
+                                   ((0, E_SQ), E_SQ, D_DRAW, CELL_HOT, ORANGE), ((E_SQ, E_SQ), D_DRAW, D_DRAW, LIGHT_GREEN, GREEN)):
+    ax.add_patch(plt.Rectangle((x0, y0), wdt, hgt, facecolor=fc, edgecolor=ec, lw=2.2))
+ax.text(E_SQ / 2, E_SQ / 2 + 0.25, f"3 × 3 = {E_SQ * E_SQ:g}", fontsize=FS_STEP, color=BLUE, ha="center", va="center",
+        fontweight="bold")
+ax.text(E_SQ / 2, E_SQ / 2 - 0.32, "原来的误差平方", fontsize=FS_SMALL, color=MUTED, ha="center", va="center")
+ax.text(E_SQ + D_DRAW / 2, E_SQ / 2, "3 × Δ", fontsize=FS_SMALL, color=ORANGE, ha="center", va="center", rotation=90)
+ax.text(E_SQ / 2, E_SQ + D_DRAW / 2, "Δ × 3", fontsize=FS_SMALL, color=ORANGE, ha="center", va="center")
+for xx, yy, label in ((E_SQ / 2, -0.38, "3"), (E_SQ + D_DRAW / 2, -0.38, "Δ"), (-0.38, E_SQ / 2, "3"), (-0.38, E_SQ + D_DRAW / 2, "Δ")):
+    ax.text(xx, yy, label, fontsize=FS_STEP, color=INK, ha="center", va="center")
+arrow(ax, (5.0, 4.12), (E_SQ + D_DRAW + 0.06, E_SQ + D_DRAW / 2 + 0.05), GREEN, lw=2.2)
+ax.text(5.12, 4.12, "右上角的小角：Δ × Δ", fontsize=FS_SMALL, color=GREEN, va="center")
+hand(ax, 4.7, 2.95, "边长：3 → 3 + Δ", color=INK, fontsize=FS_SMALL)
+hand(ax, 4.7, 2.25, "蓝：原来的正方形 3 × 3", color=BLUE, fontsize=FS_SMALL)
+hand(ax, 4.7, 1.55, "橙：两条长条，各 3 × Δ", color=ORANGE, fontsize=FS_SMALL)
+hand(ax, 4.7, 0.85, "绿：一个小角，Δ × Δ", color=GREEN, fontsize=FS_SMALL)
+panel_title(fig, [ax], "① 边长从 3 变成 3 + Δ：新正方形多出三块")
+panel_note(fig, [ax], f"Δ 特意画宽了：真实的 Δ = {D_SQ:g} 只有边长的 1/{E_SQ / D_SQ:.0f}，细得看不见。")
+ax2 = fig.add_axes([0.055, 0.02, 0.89, 0.30])
+lesson_panel(ax2, f"② Δ = {D_SQ:g}：多出来的三块各有多大", ymax=3.2)
+hand(ax2, 0.3, 2.15, f"两条长条：2 × 3 × {D_SQ:g} = {strips:g}", color=ORANGE)
+hand(ax2, 0.3, 1.45, f"一个小角：{D_SQ:g} × {D_SQ:g} = {corner:g}", color=GREEN)
+hand(ax2, 0.3, 0.75, f"合起来：{strips:g} + {corner:g} = {strips + corner:g} = 3.02² − 9", color=BLUE)
+note(ax2, 0.3, 0.1, "扔掉小角：平方大约多 2 × 3 × Δ，也就是 2 × 误差 × Δ。")
+savefig(fig, "ch05_square")
 plt.close(fig)
 
 fig = plt.figure(figsize=(9, 12.6))
@@ -226,8 +335,10 @@ check("第 2 轮：w = 1.8 − 0.1×(−2.5) = 2.05，b = 0.5 − 0.1×(−1.6) 
       len(trail) > 2 and math.isclose(trail[2][0], 2.05) and math.isclose(trail[2][1], 0.66) and math.isclose(trail[2][2], 0.07085)
       and round(1.8 - 0.1 * -2.5, 10) == 2.05 and round(0.5 - 0.1 * -1.6, 10) == 0.66 and round((0.0841 + 0.0576) / 2, 10) == 0.07085)
 p2 = model(trail[2][0], trail[2][1], X2) if len(trail) > 2 else np.array([np.nan, np.nan])
-check("第 2 轮的新预测 2.71、4.76，新误差 −0.29、−0.24，平方 0.0841、0.0576",
-      np.allclose(p2, [2.71, 4.76]) and np.allclose(p2 - Y2, [-0.29, -0.24]) and np.allclose((p2 - Y2) ** 2, [0.0841, 0.0576]))
+check("第 2 轮的新预测 2.05 × 1 + 0.66 = 2.71、2.05 × 2 + 0.66 = 4.76，新误差 2.71 − 3 = −0.29、4.76 − 5 = −0.24，平方 0.0841、0.0576",
+      np.allclose(p2, [2.71, 4.76]) and np.allclose(p2 - Y2, [-0.29, -0.24]) and np.allclose((p2 - Y2) ** 2, [0.0841, 0.0576])
+      and round(2.05 * 1 + 0.66, 10) == 2.71 and round(2.05 * 2 + 0.66, 10) == 4.76 and round(2.71 - 3, 10) == -0.29
+      and round(4.76 - 5, 10) == -0.24 and round(0.29 * 0.29, 10) == 0.0841 and round(0.24 * 0.24, 10) == 0.0576)
 check("损失每一轮都在变小（这个学习率没过门槛）；前三轮 6.5 → 0.013", bool(np.all(np.diff(losses) < 0)) and f"{trail[3][2]:.3f}" == "0.013")
 check("w 先冲过 2：第 5 轮 w = 2.1551、b = 0.7410；最高点在第 6 轮（2.1553），之后慢慢退回",
       round(trail[5][0], 4) == 2.1551 and round(trail[5][1], 4) == 0.7410 and int(np.argmax([t[0] for t in trail])) == 6
@@ -244,8 +355,9 @@ check("进阶：第 5 轮 2.8961、5.0512，误差 −0.1039、+0.0512；(−0.2
       and round((-0.2078 + 0.2048) / 2, 4) == -0.0015 and round((-0.2078 + 0.1024) / 2, 4) == -0.0527)
 check("进阶：按没舍入的旋钮，第 5 轮 ∂L/∂w 也几乎是 0（约 −0.002）；第 10 轮 ∂L/∂w 已经是正的，w 往回退",
       round(g5[0], 3) == -0.002 and g5[1] > 0)
-check("理论值：藏着的规则 w = 2、b = 1 让两张收据的损失恰好是 0；300 轮后离它不到 0.01",
-      loss_fn(model(2.0, 1.0, X2), Y2) == 0.0 and abs(trail[-1][0] - 2) < 0.01 and abs(trail[-1][1] - 1) < 0.01)
+check("理论值：藏着的规则 w = 2、b = 1 让两张收据的损失恰好是 0（2 × 1 + 1 = 3，2 × 2 + 1 = 5）；300 轮后离它不到 0.01",
+      loss_fn(model(2.0, 1.0, X2), Y2) == 0.0 and 2 * 1 + 1 == 3 and 2 * 2 + 1 == 5
+      and abs(trail[-1][0] - 2) < 0.01 and abs(trail[-1][1] - 1) < 0.01)
 p_in, p_up = model(2.2, 0.7, X2), model(2.2, 1.2, X2)   # 沟里一组（一高一低）、坡上一组（两个都多 0.2）
 L_in, L_up = loss_fn(p_in, Y2), loss_fn(p_up, Y2)
 g_in = (mean(2 * (p_in - Y2) * X2), mean(2 * (p_in - Y2)))
@@ -260,6 +372,13 @@ check("坡上 (2.2, 1.2)：预测 3.4、5.6，误差 0.4、0.6，损失 (0.16 + 
 check("沟里的坡很缓：(2.2, 0.7) 处梯度 (0.1, 0)；按字面值 (−0.2 + 0.4)/2 = 0.1，学习率 0.1 一轮只拧 0.1 × 0.1 = 0.01",
       math.isclose(g_in[0], 0.1) and abs(g_in[1]) < 1e-12 and round((2 * -0.1 * 1 + 2 * 0.1 * 2) / 2, 10) == 0.1
       and round(0.1 * 0.1, 10) == 0.01)
+check("逐张算互相补偿：(2.2, 0.7) 时 1 公里 0.2 × 1 − 0.3 = −0.1、2 公里 0.2 × 2 − 0.3 = 0.1；(2.2, 1.2) 时 0.2 + 0.2 = 0.4、0.4 + 0.2 = 0.6",
+      round(0.2 * 1 - 0.3, 10) == -0.1 and round(0.2 * 2 - 0.3, 10) == 0.1 and round(0.2 + 0.2, 10) == 0.4
+      and round(0.4 + 0.2, 10) == 0.6 and np.allclose(p_in - model(2.0, 1.0, X2), [-0.1, 0.1])
+      and np.allclose(p_up - model(2.0, 1.0, X2), [0.4, 0.6]))
+check("沟里 ∂L/∂b 按字面值 (2×(−0.1) + 2×0.1)/2 = (−0.2 + 0.2)/2 = 0；第一步 w 挪 1.8 − 1 = 0.8、b 只挪 0.5 − 0 = 0.5（坡度 −8 比 −5 陡）",
+      round((2 * -0.1 + 2 * 0.1) / 2, 10) == 0 and round((-0.2 + 0.2) / 2, 10) == 0 and abs(g_in[1]) < 1e-12
+      and math.isclose(w1 - W0, 0.8) and math.isclose(b1 - B0, 0.5) and abs(dw0) > abs(db0))
 H2 = 2 * np.array([[np.mean(X2 ** 2), np.mean(X2)], [np.mean(X2), 1.0]])   # 这只碗弯得多厉害（上面的门槛也由它算）
 lam, vec = np.linalg.eigh(H2)
 check("理论值：碗最缓的方向是“一个旋钮高、一个低”，最陡的是“两个一起高”，陡缓相差 40 多倍",
@@ -330,6 +449,19 @@ if autograd_ok:
     table(["", "手算（5.1 节）", "torch：w.grad、b.grad"],
           [["∂L/∂w", f"{dw0:g}", f"{w.grad.item():g}"], ["∂L/∂b", f"{db0:g}", f"{b.grad.item():g}"]])
     check("backward() 算的就是 5.1 节手算的偏导数：−8、−5", w.grad.item() == dw0 == -8 and b.grad.item() == db0 == -5)
+    # 倒着走一遍（正文 5.4 节的三步手算）：让 torch 把中间两格的 .grad 也留下来对照
+    w_r = torch.tensor(1.0, requires_grad=True)
+    b_r = torch.tensor(0.0, requires_grad=True)
+    pred_r = w_r * x + b_r
+    pred_r.retain_grad()                             # 中间算出来的数，torch 默认不留 .grad；retain_grad() 请它留下
+    err_r = pred_r - y
+    err_r.retain_grad()
+    torch.mean(err_r ** 2).backward()
+    print(f"倒着走：L 对两个误差 {err_r.grad.tolist()}，L 对两个预测 {pred_r.grad.tolist()}；"
+          f"(−2) × 1 + (−3) × 2 = {w_r.grad.item():g}，(−2) × 1 + (−3) × 1 = {b_r.grad.item():g}")
+    check("倒着走三步：L 对两个误差、对两个预测都是 −2、−3（平方的 2 和平均的 ÷2 抵消，就是误差本身）；(−2)×1 + (−3)×2 = −8，(−2)×1 + (−3)×1 = −5",
+          err_r.grad.tolist() == [-2.0, -3.0] and pred_r.grad.tolist() == [-2.0, -3.0] and w_r.grad.item() == -8
+          and b_r.grad.item() == -5 and list(err0) == [-2, -3] and -2 * 1 + -3 * 2 == -8 and -2 * 1 + -3 * 1 == -5)
     with torch.no_grad():                            # 拧旋钮这两行不需要记账
         w -= 0.1 * w.grad                            # w = 1 − 0.1 × (−8) = 1.8
         b -= 0.1 * b.grad                            # b = 0 − 0.1 × (−5) = 0.5
@@ -482,6 +614,11 @@ check("自测：c = −4 → (b, w) = (1 + 2c, 2 − 3c) = (−7, 14)，训练�
       and quad(-7, 14, -4, 1.5) == 5 and -7 + 21 - 9 == 5)
 check("理论值：c 取任何数，配上 b = 1 + 2c、w = 2 − 3c，两张收据的训练损失都是 0（抽 21 个 c 核对）",
       all(loss_fn(quad(1 + 2 * c, 2 - 3 * c, c, X2), Y2) < 1e-20 for c in np.linspace(-10, 10, 21)))
+check("(17, −22, 8) 逐项：17 − 22 × 1 + 8 × 1 = 3；17 − 22 × 2 + 8 × 4 = 17 − 44 + 32 = 5",
+      17 - 22 * 1 + 8 * 1 == 3 and 17 - 22 * 2 + 8 * 4 == 5 and -22 * 2 == -44 and 8 * 2 ** 2 == 32 and 17 - 44 + 32 == 5)
+check("自测的来历：(b + 2w + 4c) − (b + w + c) = 5 − 3 → w + 3c = 2，w = 2 − 3c；b = 3 − (2 − 3c) − c = 1 + 2c（c = −4、0、8 代回都对）",
+      5 - 3 == 2 and all(3 - (2 - 3 * c) - c == 1 + 2 * c and (1 + 2 * c) + (2 - 3 * c) + c == 3
+                         and (1 + 2 * c) + 2 * (2 - 3 * c) + 4 * c == 5 for c in (-4, 0, 8)))
 
 # “改一改”第 3 条改这一行：训练用的收据多到 40 张，8 个旋钮还管得住吗？
 N_TRAIN = 8  # TWEAK-3: 40
@@ -531,6 +668,7 @@ check("直线训练损失 0.146、验证损失 0.114；曲线验证损失 0.706"
       f"{tr_line:.3f}" == "0.146" and f"{va_line:.3f}" == "0.114" and f"{va_curve:.3f}" == "0.706")
 check(f"曲线的验证损失（{va_curve:.3f}）是直线（{va_line:.3f}）的 3 倍以上", va_curve > 3 * va_line)
 check("正文：新收据上曲线的损失是直线的 6 倍多", 6 < va_curve / va_line < 7)
+check("6 倍多的来历：0.706 ÷ 0.114 ≈ 6.2", round(0.706 / 0.114, 1) == 6.2 and round(va_curve / va_line, 1) == 6.2)
 check("错得最多的那张：0.67 公里、实付 1.89 元，曲线猜 4.16 元（4.16 − 1.89 = 2.27），直线猜 2.39 元",
       (f"{xw:.2f}", f"{yw:.2f}", f"{cw:.2f}", f"{gap_shown:.2f}", f"{lw_:.2f}") == ("0.67", "1.89", "4.16", "2.27", "2.39"))
 check("这一张的平方误差：曲线 2.27² = 5.1529（约 5.15），直线 0.5² = 0.25，曲线是直线的 20 多倍",
@@ -548,6 +686,21 @@ check(f"学出的直线在训练那 {N_TRAIN} 张上比藏着的规则还低（{
       tr_line < truth_tr and va_line > truth_va)
 check(f"按字面值重算（控制台把 2.074x + 1.008 换成 2x + 1）：用印出的 8 个车费得 {mean([(2 * xv + 1 - yv) ** 2 for xv, yv in zip(np.linspace(0.5, 4.0, 8), YS_TEXT)]):.4f}——以 0.1837 开头",
       0.1837 <= mean([(2 * xv + 1 - yv) ** 2 for xv, yv in zip(np.linspace(0.5, 4.0, 8), YS_TEXT)]) < 0.1838)
+# 5.6 节：这 8 张的运气差在哪——车费减规则价，就是每张的随机误差（用正文印出的 8 个车费算，读者可以手算）
+XS_TEXT = np.linspace(0.5, 4.0, 8)
+noise_text = [round(yv - (2 * xv + 1), 3) for xv, yv in zip(XS_TEXT, YS_TEXT)]
+outside = sum(abs(v) > SIGMA for v in noise_text)
+p_out = 1 - math.erf(1 / math.sqrt(2))             # 钟形里超出 ±σ 的比例（第 4 章 4.6 节：约 68% 在 ±σ 以内）
+print(f"正文那 8 张训练收据的随机误差（车费 − 规则价）：{'、'.join(f'{v:.3f}' for v in noise_text)}；超出 ±{SIGMA:g} 元的有 {outside} 张"
+      f"（钟形下平均该是 {p_out:.2f} × 8 = {8 * p_out:.1f} 张）")
+check("8 张的随机误差 0.316、0.533、−0.766、−0.041、0.304、0.406、0.196、0.449，6 张超出 ±0.3 元；钟形下约 68% 在 ±σ 以内，8 张里该超出两三张",
+      [f"{v:.3f}" for v in noise_text] == ["0.316", "0.533", "-0.766", "-0.041", "0.304", "0.406", "0.196", "0.449"]
+      and outside == 6 and round(1 - p_out, 2) == 0.68 and 2 < 8 * p_out < 3
+      and (N_TRAIN != 8 or [f"{v:.3f}" for v in y_tr - (2 * x_tr + 1)] == [f"{v:.3f}" for v in noise_text]))
+d_tr, d_va = tr_line - truth_tr, va_line - truth_va
+print(f"直线比藏着的规则：{N_TRAIN} 张训练收据上 {d_tr:+.3f}，40 张验证收据上 {d_va:+.3f}")
+check("对照表：直线 − 规则，训练收据上 0.146 − 0.184 = −0.038（迁就了随机误差），验证收据上 0.114 − 0.069 = +0.045",
+      f"{d_tr:+.3f}" == "-0.038" and f"{d_va:+.3f}" == "+0.045" and round(0.146 - 0.184, 3) == -0.038 and round(0.114 - 0.069, 3) == 0.045)
 
 # ---------------------------------------------------------------------------
 banner("5b. 画图：figures/ch05_overfit.png（穿过每张收据的曲线 vs 直线）")
@@ -601,6 +754,8 @@ for b3, w3, c3 in ((1, 2, 0), (17, -22, 8), (-7, 14, -4)):
 table(["(b, w, c)", "训练损失（2 张）", "新收据上的预测（元）", "误差", "这一张上的损失"], rows)
 check("迷你验证集：训练损失都是 0；新收据上的损失 0、4、1，挑中的是 (1, 2, 0)——藏着的规则",
       mini_val == [0, 4, 1] and int(np.argmin(mini_val)) == 0)
+check("按字面值：误差 4 − 4 = 0、2 − 4 = −2、5 − 4 = 1，损失 (−2) × (−2) = 4、1 × 1 = 1（只有一张，平均就是它自己）",
+      4 - 4 == 0 and 2 - 4 == -2 and 5 - 4 == 1 and (-2) * (-2) == 4 and 1 * 1 == 1)
 print()
 ks = list(range(1, K_CURVE + 1))
 tr_k = [mse_of(fit(k), x_tr, y_tr) for k in ks]
@@ -611,6 +766,8 @@ print(f"验证损失最低的是 {best_k} 个旋钮；训练损失最低的是 {
 check("旋钮越多，训练损失只降不升", all(a >= b_ - 1e-12 for a, b_ in zip(tr_k, tr_k[1:])))
 check("验证损失最低的是 2 个旋钮（直线）；只看训练损失会挑 8 个", best_k == 2 and ks[int(np.argmin(tr_k))] == 8)
 check("7 个旋钮时训练损失 0.008（读图段引用）", f"{tr_k[6]:.3f}" == "0.008")
+check("只降不升的一个例子：4 个和 5 个旋钮的训练损失几乎持平（都约 0.100），多一个旋钮也没让它变高",
+      f"{tr_k[3]:.3f}" == f"{tr_k[4]:.3f}" == "0.100" and tr_k[4] <= tr_k[3] + 1e-12)
 check("1 个旋钮：训练 5.792、验证 5.121（两边都差）；2 个：0.146 和 0.114；8 个：0.000 和 0.706",
       [f"{tr_k[0]:.3f}", f"{va_k[0]:.3f}", f"{tr_k[1]:.3f}", f"{va_k[1]:.3f}", f"{tr_k[-1]:.3f}", f"{va_k[-1]:.3f}"]
       == ["5.792", "5.121", "0.146", "0.114", "0.000", "0.706"])
@@ -683,6 +840,7 @@ if cfg_path.is_file():
           at >= 0 and lines_in_order(cfg_text[at:], CFG_LINES))
 else:
     print("  （没找到项目的 env cfg，跳过这一项）")
+check("每一轮的 98,304 条记录分成 4 小批，每批 98,304 ÷ 4 = 24,576 条", 98_304 // 4 == 24_576 and 98_304 % 4 == 0)
 rsl_spec = importlib.util.find_spec("rsl_rl")
 rsl_dir = Path(rsl_spec.origin).parent if rsl_spec and rsl_spec.origin else None
 if rsl_dir and (rsl_dir / "runners" / "on_policy_runner.py").is_file():

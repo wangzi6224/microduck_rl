@@ -7,13 +7,15 @@
 运行：uv run python docs/learn-zh/labs/ch19_onnx_vs_torch.py
 指定运行目录：LEARNZH_RUN_DIR=logs/rsl_rl/velocity/<某个训练目录> uv run python docs/learn-zh/labs/ch19_onnx_vs_torch.py
 不给就找 logs/rsl_rl/velocity/ 下最新的、同时含 .onnx 和 model_*.pt 的 learnzh-* 目录（第 14 章实验生成）。
-纯 CPU，不训练、不建仿真环境。第 2、6、8、9 节的数全是手算得出来的，没有运行目录也照样跑。
+纯 CPU，不训练、不建仿真环境。第 2、6、8、9 节的数全是手算得出来的，没有运行目录也照样跑；
+其余各节里正文的换算和手算（4.8 MB、float32 那一位、50 Hz……）也不需要运行目录，照样核对，只跳过要打开真文件的那几步。
 小节编号与正文一一对应：实验第 K 节 = 正文 19.K 节（第 11 节对应「映射到项目」）。
 正文“改一改”要改的三行都带 `# TWEAK-k:` 标记（第 2 节两处、第 4 节一处）。
 # LAB_REQUIRES: run_dir
 """
 
 import contextlib
+import importlib.util
 import io
 import os
 import tempfile
@@ -88,7 +90,7 @@ else:
 HAVE_RUN = run_dir is not None and run_dir.is_dir() and list(run_dir.glob("*.onnx")) and list(run_dir.glob("model_*.pt"))
 if not HAVE_RUN:
     print("没有找到同时含 .onnx 和 model_*.pt 的运行目录。")
-    print("第 1、3、4、5、7、10 节会跳过；第 2、6、8、9 节的手算不需要运行目录，照常跑。")
+    print("第 1、3、4、5、7、10 节里要打开真文件的部分会跳过（正文的换算照样核对）；第 2、6、8、9 节的手算不需要运行目录，照常跑。")
     print("要跑全：先做第 14 章的冒烟训练（需要 GPU），或者设 LEARNZH_RUN_DIR=<某个训练目录>。")
     onnx_path = ckpt_paths = None
 else:
@@ -117,6 +119,28 @@ else:
     check("检查点比 ONNX 大（里面还装着 critic 和 Adam 的两本账）",
           ckpt_path.stat().st_size > onnx_path.stat().st_size)
     check(f"检查点差不多是 ONNX 的 6 倍（这次是 {size_ratio:.2f} 倍）", round(size_ratio) == 6)
+
+# 19.1 节的换算和"为什么是 6 倍"的粗账：用的是正文印出来的数（存档那次的两个文件大小）和配置里的层宽，不需要运行目录。
+print(f"字节换成 MB（一百万字节算 1 MB）：4,842,943 ÷ 1,000,000 ≈ {4842943 / 1e6:.1f}；793,706 ÷ 1,000,000 ≈ {793706 / 1e6:.2f}；"
+      f"4,842,943 ÷ 793,706 ≈ {4842943 / 793706:.1f}")
+ACTOR_LAYERS = [(61, 512), (512, 256), (256, 128), (128, 14)]    # （吃进几个, 报出几个），第 6 章 6.5 节
+CRITIC_LAYERS = [(76, 512), (512, 256), (256, 128), (128, 1)]    # critic 吃进 76 个数，最后只报 1 个（第 6 章 6.7 节）
+actor_mlp = sum(out * (inp + 1) for inp, out in ACTOR_LAYERS)    # 每层 = 店数 × (输入个数 + 1)
+actor_knobs = actor_mlp + 14                                     # 再加 14 个动作 σ
+critic_knobs = sum(out * (inp + 1) for inp, out in CRITIC_LAYERS)
+ckpt_numbers = (actor_knobs + critic_knobs) * 3                  # 旋钮 + Adam 的 m + Adam 的 v
+onnx_numbers = actor_mlp + 61 + 61                               # 四层 + 61 个 μ + 61 个 σ+0.01
+print(f"粗账：actor {actor_knobs:,}、critic {critic_knobs:,} 个旋钮；检查点 ({actor_knobs:,} + {critic_knobs:,}) × 3 = {ckpt_numbers:,} 个数，"
+      f"ONNX {onnx_numbers:,} 个，{ckpt_numbers:,} ÷ {onnx_numbers:,} ≈ {ckpt_numbers / onnx_numbers:.1f}")
+check("按印出来的数重算：4,842,943 ÷ 1,000,000 ≈ 4.8 MB，793,706 ÷ 1,000,000 ≈ 0.79 MB",
+      round(4842943 / 1e6, 1) == 4.8 and round(793706 / 1e6, 2) == 0.79)
+check("按印出来的数重算：4,842,943 ÷ 793,706 ≈ 6.1", round(4842943 / 793706, 1) == 6.1)
+check("从层宽数出来：actor 197,788 个旋钮、critic 203,777 个（第 6 章 6.5、6.7 节）",
+      actor_knobs == 197788 and critic_knobs == 203777)
+check("粗账：critic 和 actor 差不多大（2 份），每份再乘 3（旋钮 + m + v），2 × 3 = 6", 2 * 3 == 6)
+check("精确的账：(197,788 + 203,777) × 3 = 1,204,695；ONNX 197,896 个；1,204,695 ÷ 197,896 ≈ 6.1",
+      ckpt_numbers == 1204695 and onnx_numbers == 197896 and round(1204695 / 197896, 1) == 6.1)
+check("多出来的 6 − 1 = 5 份 = critic 1 份 + actor 的两本账 2 份 + critic 的两本账 2 份", 6 - 1 == 5 == 1 + 2 + 2)
 
 # ---------------------------------------------------------------------------
 banner("1b. 画图：figures/ch19_overview.png（本章地图：两个文件、一串算子、一圈 0.02 秒）")
@@ -172,7 +196,7 @@ MINI_OBS = np.array([12.0, 2.0, 4.0])  # TWEAK-1: np.array([12.0, 2.0, 12.0])
 
 
 def elu(z):
-    """第 6 章 6.4 节那道门：正数原样过，负数压成 e^z − 1（永远不低于 −1）。"""
+    """第 6 章 6.1 节那道门：正数原样过，负数压成 e^z − 1（永远不低于 −1）。"""
     return np.where(z >= 0, z, np.exp(z) - 1.0)
 
 
@@ -260,6 +284,21 @@ print(minus(f"自测那一帧 {vec(quiz_obs)}：归一化 {vec(quiz_x)} → 第�
 check("自测：(8, 1, 6) 归一化后是 (−1, 1, 1)，输出是 (2.3679, 1.6321)",
       np.allclose(quiz_x, [-1.0, 1.0, 1.0]) and np.allclose(np.round(quiz_out, 4), [2.3679, 1.6321]))
 check("按印出来的数重算：3 − 0.6321 = 2.3679", round(3 - 0.6321, 4) == 2.3679)
+check("自测的中间和：−1 + 0 + 2 + 0.5 = 1.5；1 + 1 + 0 − 3 = −1", -1 + 0 + 2 + 0.5 == 1.5 and 1 + 1 + 0 - 3 == -1)
+
+# 正文 19.2 节把每一步的中间和都写了出来：这里逐条核对。
+print("分母 σ + ε：" + "，".join(f"{s:g} + {MINI_EPS:g} = {s + MINI_EPS:g}" for s in MINI_STD) + "（σ 故意编成这样，好手算）")
+print(f"e^(−2) = 1 ÷ e² = 1 ÷ {np.exp(2):.3f} ≈ {np.exp(-2):.4f}（第 1 章 1.8 节的表里是 {np.exp(-2):.6f}）")
+n_mini_const = sum(v.size for v in mini_init.values())
+print(f"迷你 ONNX 的常数一共 {' + '.join(str(v.size) for v in mini_init.values())} = {n_mini_const} 个数")
+check("按印出来的数重算：1.99 + 0.01 = 2，0.99 + 0.01 = 1，3.99 + 0.01 = 4",
+      round(1.99 + 0.01, 6) == 2 and round(0.99 + 0.01, 6) == 1 and round(3.99 + 0.01, 6) == 4)
+check("第一层的中间和：1 + 0 + 1 + 0.5 = 2.5；−1 + 2 + 0 − 3 = −2", 1 + 0 + 1 + 0.5 == 2.5 and -1 + 2 + 0 - 3 == -2)
+check("e^(−2) = 1 ÷ e² = 1 ÷ 7.389 ≈ 0.1353（第 1 章 1.8 节的表里是 0.135335）",
+      round(float(np.exp(2)), 3) == 7.389 and round(1 / 7.389, 4) == 0.1353 and round(float(np.exp(-2)), 6) == 0.135335)
+check("按印出来的数重算：5 − 0.8647 = 4.1353", round(5 - 0.8647, 4) == 4.1353)
+check("迷你 ONNX 的 6 个常数一共 6 + 2 + 4 + 2 + 3 + 3 = 20 个数；fc1.weight 是 [2, 3]，2 × 3 = 6",
+      n_mini_const == 20 == 6 + 2 + 4 + 2 + 3 + 3 and list(mini_init.get("fc1.weight", np.zeros(0)).shape) == [2, 3])
 
 # ---------------------------------------------------------------------------
 banner("2b. 画图：figures/ch19_mini_graph.png（迷你版的五个算子，每一步的数都写在图里）")
@@ -291,7 +330,7 @@ hand(ax, 0.35, 1.65, minus(f"ELU(−2) = e^(−2) − 1 = {np.exp(-2.0):.4f} −
 arrow(ax, (7.5, 2.05), (8.2, 2.05), MUTED, lw=2)
 lesson_cells(ax, [[2.5], [round(float(h_mid[1]), 4)]], left=8.3, bottom=1.35, width=1.35, height=0.72,
              highlights=[(1, 0)])
-note(ax, 0.35, 0.55, "门只对负数动手：−2 被压到 −0.8647，再负也不会低于 −1（第 6 章 6.4 节）。")
+note(ax, 0.35, 0.55, "门只对负数动手：−2 被压到 −0.8647，再负也不会低于 −1（第 6 章 6.1 节）。")
 
 ax = axes[3]
 lesson_panel(ax, "④ 第二层给出 2 个动作；这五步在 ONNX 里就是五个算子", xmax=11)
@@ -353,6 +392,17 @@ else:
           len(meta["joint_names"].split(",")) == 14 and len(meta["default_joint_pos"].split(",")) == 14)
     check("action_scale = 1.0（第 17 章 17.1 节）", float(meta["action_scale"]) == 1.0)
 
+# 19.3 节的账：不需要运行目录，用层宽算。
+layer_shapes = [[out, inp] for inp, out in ACTOR_LAYERS]          # 价格表是"报出几个"行 ×"吃进几个"列（第 6 章 6.3 节）
+print("九个算子对照表里的四张价格表：" + "、".join(f"{r} 行 {c} 列" for r, c in layer_shapes)
+      + f"；四层只有 {len(ACTOR_LAYERS) - 1} 道门（最后一层不过门）")
+check("四层夹 3 道门：2 个归一化 + 4 个 Gemm + 3 个 Elu = 9 个算子",
+      len(ACTOR_LAYERS) - 1 == 3 and 2 + len(ACTOR_LAYERS) + (len(ACTOR_LAYERS) - 1) == 9)
+check("四张价格表是 512×61、256×512、128×256、14×128", layer_shapes == [[512, 61], [256, 512], [128, 256], [14, 128]])
+check("常数表手算一行：[512, 61] 是 512 × 61 = 31,232 个数；[1, 61] 是 1 × 61 = 61 个", 512 * 61 == 31232 and 1 * 61 == 61)
+check("自测：61 + 61 = 122；197,774 + 122 = 197,896", 61 + 61 == 122 and actor_mlp + 122 == 197896)
+check("图 ② 的柱子：512 ÷ 14 ≈ 37", round(512 / 14) == 37)
+
 # ---------------------------------------------------------------------------
 banner("3b. 画图：figures/ch19_nine_ops.png（九个算子，和每一步数据有多宽）")
 WIDTHS = [("输入 obs", 61), ("第 1 层", 512), ("第 2 层", 256), ("第 3 层", 128), ("输出 actions", 14)]
@@ -363,7 +413,7 @@ lesson_panel(ax, "① 九个算子排成一条流水线", xmax=12)
 draw_chain(ax, REAL_OPS, y=2.35, x0=0.3, w=1.05, gap=0.22, height=0.8)
 hand(ax, 0.3, 1.85, "Sub, Div = 归一化（第 8 章）", color=BLUE, fontsize=FS_SMALL)
 hand(ax, 4.4, 1.85, "Gemm = 价格表 + 运费（第 2 章 2.6 节）", color=GREEN, fontsize=FS_SMALL)
-hand(ax, 0.3, 1.25, "Elu = 那道门（第 6 章 6.4 节）", color=ORANGE, fontsize=FS_SMALL)
+hand(ax, 0.3, 1.25, "Elu = 那道门（第 6 章 6.1 节）", color=ORANGE, fontsize=FS_SMALL)
 hand(ax, 4.4, 1.25, "2 个归一化 + 4 个 Gemm + 3 个 Elu = 9 个算子", fontsize=FS_SMALL)
 note(ax, 0.3, 0.55, "最左边进去的是 61 个数，最右边出来的是 14 个数，中间一步不多、一步不少。")
 
@@ -411,6 +461,30 @@ else:
     print(f"{FRAMES} 帧随机观测的最大差异 = {max_diff:.2e}  （你的数字会不同；量级应该在 1e-6 上下）")
     check("numpy 手写 = onnxruntime（最大差异 < 1e-4）", max_diff < 1e-4)
 
+# 19.4 节"为什么会差一点点"：这几条不需要运行目录。
+exact_first = float(out_np[0])                         # 19.2 节第一个动作的精确值（numpy 默认存 16 位左右）：2 × 2.5 + (e^(−2) − 1) = 4 + e^(−2)
+f32_first = float(np.float32(exact_first))             # 存成 float32 后离它最近的那个数（JS 的 Math.fround 做的就是这件事）
+print(f"迷你版第一个动作：精确值 {exact_first:.9f}…，存成 float32 是 {f32_first:.9f}…，onnxruntime 交出 {float(out_ort[0]):.9f}…，"
+      f"差 {f32_first - exact_first:.3e}")
+print(f"JS / Python 的数存 16 位左右：(0.1 + 0.2) + 0.3 = {(0.1 + 0.2) + 0.3!r}；0.1 + (0.2 + 0.3) = {0.1 + (0.2 + 0.3)!r}")
+n_mult = sum(out * inp for inp, out in ACTOR_LAYERS)    # 四张价格表的格子数 = 一帧要做的乘法次数
+print(f"一帧的乘法次数 = 四张价格表的格子数 = {' + '.join(f'{out * inp:,}' for inp, out in ACTOR_LAYERS)} = {n_mult:,}")
+check("精确值 4 + e^(−2) = 4.135335283…；存成 float32 是 4.135335445…",
+      abs(exact_first - (4 + float(np.exp(-2)))) < 1e-12 and round(exact_first, 9) == 4.135335283 and round(f32_first, 9) == 4.135335445)
+check("onnxruntime 交出的第一个动作，正是 float32 里离精确值最近的那个数", float(out_ort[0]) == f32_first)
+check("按印出来的数重算：4.135335445 − 4.135335283 = 0.000000162 = 1.62 × 10⁻⁷",
+      round(4.135335445 - 4.135335283, 9) == 0.000000162 and round(0.000000162 / 1e-7, 2) == 1.62)
+check("换个顺序加，末位就不一样：(0.1 + 0.2) + 0.3 = 0.6000000000000001，0.1 + (0.2 + 0.3) = 0.6",
+      (0.1 + 0.2) + 0.3 == 0.6000000000000001 and 0.1 + (0.2 + 0.3) == 0.6)
+check("一帧的乘法：31,232 + 131,072 + 32,768 + 1,792 = 196,864，将近 20 万次", n_mult == 196864 == 31232 + 131072 + 32768 + 1792)
+check("科学计数法：7.15e-07 = 0.000000715，1e-6 = 0.000001 = 10⁻⁶（百万分之一）",
+      7.15e-07 == 0.000000715 and 1e-6 == 0.000001 == 10 ** -6 and 1e-7 == 0.0000001)
+check("10 的负几次方那张表：10⁻¹ = 0.1，10⁻³ = 0.001，10⁻⁶ = 0.000001，10⁻⁷ = 0.0000001",
+      [round(10.0 ** -k, 10) for k in (1, 3, 6, 7)] == [0.1, 0.001, 0.000001, 0.0000001])
+check("差六个数量级：1 ÷ 0.000001 = 1,000,000；容差 10⁻⁴ 是 10⁻⁶ 的 100 倍",
+      round(1 / 0.000001) == 1_000_000 == 10 ** 6 and round(1e-4 / 1e-6) == 100)
+check("容差 10⁻⁴ rad：0.0001 × 57.3 ≈ 0.006°", round(0.0001 * 57.3, 3) == 0.006)
+
 # ---------------------------------------------------------------------------
 banner("5. 部署不采样：同一帧喂两次，输出一模一样")
 if not HAVE_RUN:
@@ -425,6 +499,12 @@ else:
     print("ONNX 存下来的常数名字里有没有 std_param :", any("std_param" in n for n in names))
     check("同一帧两次，输出逐位相同", np.array_equal(a1, a2))
     check("ONNX 里根本没有 std_param：导出时就丢掉了", not any("std_param" in n for n in names))
+
+# 19.5 节的对比（教学构造：假设训练时那口钟宽 σ = 1，两次抽到的噪声是 0.5 和 −1.2）
+TRAIN_SIGMA, NOISES = 1.0, (0.5, -1.2)
+sampled = [round(4.1353 + TRAIN_SIGMA * e, 4) for e in NOISES]
+print(f"训练时（μ + σ × 噪声）：4.1353 + 1 × 0.5 = {sampled[0]}，4.1353 + 1 × (−1.2) = {sampled[1]}；部署时两次都是 4.1353")
+check("按印出来的数重算：4.1353 + 1 × 0.5 = 4.6353，4.1353 + 1 × (−1.2) = 2.9353", sampled == [4.6353, 2.9353])
 
 # ---------------------------------------------------------------------------
 banner("6. 忘了烘焙会怎样：跳过 Sub/Div，直接把原始读数喂给网络")
@@ -447,6 +527,23 @@ check("按印出来的数重算：(−1) × (−0.999998) + 1 = 1.999998（表�
       round(0.999998 + 1.0, 6) == 1.999998 and round(1.999998, 4) == 2.0)
 check("按印出来的数重算：35.8647 × 57.3 ≈ 2055°，2055 ÷ 360 ≈ 5.7 圈",
       round(35.8647 * 57.3) == 2055 and round(2055 / 360, 1) == 5.7)
+check("标题里的 4.14 是 4.1353 保留两位小数；57.3 是 180 ÷ π", round(4.1353, 2) == 4.14 and round(180 / np.pi, 1) == 57.3)
+check("中间和：12 + 0 + 8 + 0.5 = 20.5；−12 + 2 + 0 − 3 = −13；41 − 0.999998 = 40.000002",
+      12 + 0 + 8 + 0.5 == 20.5 and -12 + 2 + 0 - 3 == -13 and round(41 - 0.999998, 6) == 40.000002)
+check("e^(−13) ≈ 0.0000023，四舍五入到 6 位是 0.000002；0.000002 − 1 = −0.999998",
+      round(float(np.exp(-13)), 7) == 0.0000023 and round(float(np.exp(-13)), 6) == 0.000002 and round(0.000002 - 1, 6) == -0.999998)
+# "这笔账拆开看"：差出来的 35.8647，店 1 那份多 36，店 2 那份少 0.1353
+part1 = 2 * float(bad_h[0] - h_mid[0])                 # 店 1 那份：2 × 20.5 − 2 × 2.5
+part2 = 1 * float(bad_h[1] - h_mid[1])                 # 店 2 那份：被门压住，只从 −0.8647 变到 −1
+print(minus(f"拆账：店 1 多出 (12 − 1) + (8 − 1) = 18，2.5 → {num(bad_z[0])}；第二层店 1 那份多 {num(part1)}，"
+            f"店 2 那份变了 {num(part2)}；合起来 {num(part1 + part2)}"))
+check("店 1 多出 (12 − 1) + (8 − 1) = 11 + 7 = 18，2.5 + 18 = 20.5",
+      (12 - 1) + (8 - 1) == 18 and 2.5 + 18 == 20.5 and np.isclose(bad_z[0] - z_mid[0], 18))
+check("第二层：店 1 那份多 2 × 20.5 − 2 × 2.5 = 36，店 2 那份少 0.1353，合起来就是 35.8647",
+      np.isclose(part1, 36) and round(part2, 4) == -0.1353 and np.isclose(part1 + part2, gap))
+check("按印出来的数重算：−1 − (−0.8647) = −0.1353；36 − 0.1353 = 35.8647",
+      round(-1 - (-0.8647), 4) == -0.1353 and round(36 - 0.1353, 4) == 35.8647)
+check("真模型那次的 1.9 rad ≈ 109°；1 rad 是 0.000001 rad 的 100 万倍", round(1.9 * 57.3) == 109 and round(1 / 1e-6) == 10 ** 6)
 if HAVE_RUN:
     frame = (np.random.default_rng(11).normal(size=61) * 0.5).astype(np.float32)
 
@@ -523,6 +620,45 @@ else:
     check("14 个关节名、14 个 HOME、14 个动作，三者一样长",
           len(joint_names) == len(home) == len(action) == 14)
 
+# 19.7 节的换算，和"各策略用哪几格命令"——读源码核对，不需要运行目录。
+def src_text(rel: str) -> str:
+    path = REPO / rel
+    return path.read_text(encoding="utf-8") if path.is_file() else ""
+
+
+infer_text = src_text("scripts/infer_policy.py")
+CONTROL_DT, PHYSICS_DT, DECIMATION = 0.02, 0.005, 4
+print(f"一圈 {CONTROL_DT} s = {CONTROL_DT * 1000:g} ms；一秒 1 ÷ {CONTROL_DT} = {1 / CONTROL_DT:g} 圈（{1 / CONTROL_DT:g} Hz）；"
+      f"{DECIMATION} × {PHYSICS_DT} = {DECIMATION * PHYSICS_DT:g} s；一小步 {PHYSICS_DT * 1000:g} ms")
+print("排练脚本 --delay 3 6 按环境步：3 × 20 = 60 到 6 × 20 = 120 ms；训练时 3–6 个物理步：3 × 5 = 15 到 6 × 5 = 30 ms")
+check("0.02 s = 20 ms；1 ÷ 0.02 = 50 Hz；4 × 0.005 = 0.02 s；一小步 5 ms",
+      round(CONTROL_DT * 1000) == 20 and round(1 / CONTROL_DT) == 50 and round(DECIMATION * PHYSICS_DT, 6) == CONTROL_DT
+      and round(PHYSICS_DT * 1000) == 5)
+check("排练脚本里写着 decimation = 4、物理步 0.005 s",
+      not infer_text or ("decimation = 4" in infer_text and "model.opt.timestep = 0.005" in infer_text))
+check("排练脚本的延迟缓冲在 apply_action() 里，每圈只调用一次、在 4 个物理小步之前：所以它按环境步数",
+      not infer_text or lines_in_order(infer_text, ["def apply_action(self, action):", "self.action_buffer[self.buffer_index] = action.copy()",
+                                                     "action = policy.infer()", "policy.apply_action(action)",
+                                                     "for _ in range(decimation):"]))
+check("延迟换算：3 × 20 = 60、6 × 20 = 120 ms（环境步）；3 × 5 = 15、6 × 5 = 30 ms（物理步）",
+      (3 * 20, 6 * 20, 3 * 5, 6 * 5) == (60, 120, 15, 30))
+check("命令块 13 = 3 + 4 + 6；只填 3 项时其余 61 − 3 = 58 项填 0；上一步动作是 [34, 48)：3 + 3 + 14 + 14 = 34",
+      13 == 3 + 4 + 6 and 61 - 3 == 58 and 3 + 3 + 14 + 14 == 34 and 34 + 14 == 48)
+vel_text = src_text("src/mjlab_microduck/tasks/microduck_velocity_env_cfg.py")
+sit_text = src_text("src/mjlab_microduck/tasks/microduck_sitstand_env_cfg.py")
+roll_text = src_text("src/mjlab_microduck/tasks/microduck_roulade_env_cfg.py")
+check("走路：头部 4 格接的是真的 head_pose 命令，身体 6 格接 body_pose 命令",
+      not vel_text or lines_in_order(vel_text, ['terms["head_command"] = ObservationTermCfg(', 'params={"command_name": "head_pose"},',
+                                                'terms["body_command"] = ObservationTermCfg(', 'params={"command_name": "body_pose"},']))
+check("坐下起立：速度块是 [sit_flag, 0, 0]，头部 4 格接 head_pose 命令，身体 6 格是真的 0",
+      not sit_text or lines_in_order(sit_text, ["cmd (twist slot) = [sit_flag, 0, 0]",
+                                                'func=mdp.generated_commands, params={"command_name": "head_pose"},',
+                                                'func=microduck_mdp.zero_command_padding, params={"dim": 6},']))
+check("前滚翻：头部 4 格、身体 6 格是真的 0，速度 3 格只在 0 附近抽很小的数",
+      not roll_text or lines_in_order(roll_text, ['func=microduck_mdp.zero_command_padding, params={"dim": 4},',
+                                                  'func=microduck_mdp.zero_command_padding, params={"dim": 6},',
+                                                  "command.ranges.lin_vel_x = (-0.01, 0.01)"]))
+
 # ---------------------------------------------------------------------------
 banner("7b. 画图：figures/ch19_deploy_loop.png 和 figures/ch19_hotswap.png")
 fig, axes = lesson_figure(2, "真机上每 0.02 秒转一圈：五件事，其中一件是跑 ONNX", panel_height=3.3, width=12.0)
@@ -578,7 +714,8 @@ note(ax, 0.3, 0.35, "按一下按钮换一个文件，机器人不用停下来�
 ax = axes[1]
 lesson_panel(ax, "② 13 格命令块：谁用哪几格，训练时就定死了", xmax=11.5, ymax=4.4)
 labels = ["vx", "vy", "ωz"] + [f"头{i}" for i in range(1, 5)] + [f"身{i}" for i in range(1, 7)]
-used = {0: [0, 1, 2], 1: [0], 2: []}
+HEAD = [3, 4, 5, 6]                                   # 头部 4 格：走路和坐下起立都接着 head_pose 命令（上面第 7 节读源码核对过）
+used = {0: [0, 1, 2] + HEAD, 1: [0] + HEAD, 2: []}    # 上色 = 这个策略训练时有意义的格子
 for i, (name, color) in enumerate(POLICIES):
     y = 2.8 - i * 0.7
     ax.text(0.3, y + 0.22, name.split()[0], fontsize=FS_SMALL, color=color, va="center")
@@ -592,7 +729,7 @@ for i, (name, color) in enumerate(POLICIES):
 ax.add_patch(plt.Rectangle((2.50, 1.30), 0.76, 1.96, facecolor="none", edgecolor=ORANGE, lw=1.8, ls="--"))
 hand(ax, 0.3, 1.00, "虚线框里是同一格：走路读作 vx（前进多快），坐下／起立读作姿态标志（1 坐下 / 0 站起）。",
      fontsize=FS_SMALL, color=ORANGE)
-note(ax, 0.3, 0.45, "走路用前 3 格，坐下／起立只用第 1 格，前滚翻 13 格全零；没上色的是零填充（第 15 章 15.7 节）。")
+note(ax, 0.3, 0.45, "上色的是这个策略训练时用到的格子；没上色的是零填充，位置照样占着（第 15 章 15.7 节）。")
 savefig(fig, "ch19_hotswap")
 plt.close(fig)
 
@@ -609,6 +746,8 @@ check("读数正好等于 μ 时，归一化后是 (0, 0, 0)", np.allclose(x_oth
 check("第二帧的输出是 (0.0498, 1.9502)", np.allclose(np.round(out_other, 4), [0.0498, 1.9502]))
 check("按印出来的数重算：1 + (−0.9502) = 0.0498", round(1 - 0.9502, 4) == 0.0498)
 check("同一个文件、两帧不同的读数，输出不同", not np.allclose(out_np, out_other))
+check("e^(−3) = 1 ÷ e³ = 1 ÷ 20.09 ≈ 0.0498；0.9502 + 1 = 1.9502",
+      round(float(np.exp(3)), 2) == 20.09 and round(1 / 20.09, 4) == 0.0498 and round(0.9502 + 1, 4) == 1.9502)
 
 # ---------------------------------------------------------------------------
 banner("9. 三种差异，量级差得很远：浮点误差 / 漏归一化 / 把格子填错")
@@ -625,6 +764,16 @@ print(f"对调之后：归一化 {vec(x_swap)} → 第一层 {vec(MINI_W1 @ x_sw
 check("对调后归一化是 (1, 4, 0)", np.allclose(x_swap, [1.0, 4.0, 0.0]))
 check("对调后输出是 (3, 1)", np.allclose(np.round(out_swap, 4), [3.0, 1.0]))
 check("按印出来的数重算：4.1353 − 3 = 1.1353", round(4.1353 - 3.0, 4) == 1.1353)
+check("对调后的中间和：1 + 0 + 0 + 0.5 = 1.5；−1 + 4 + 0 − 3 = 0", 1 + 0 + 0 + 0.5 == 1.5 and -1 + 4 + 0 - 3 == 0)
+check("按印出来的数重算：1.1353 × 57.3 ≈ 65°", round(1.1353 * 57.3) == 65)
+check("表里的 2e-07 就是 19.4 节那个 float32 误差 0.000000162，四舍五入成 0.0000002",
+      f"{mini_float_gap:.0e}" == "2e-07" and np.isclose(mini_float_gap, abs(f32_first - exact_first), rtol=1e-6, atol=0)
+      and round(0.000000162, 7) == 0.0000002)
+once = (6 - 2) / (4 + 0.01)                          # 第 8 章 8.6 节那一列：μ = 2、σ = 4，读数 6
+twice = (once - 2) / (4 + 0.01)                      # 多做一次归一化
+print(f"第 8 章 8.6 节那一列：读数 6 该变成 {once:.4f}；漏了就是 6；多做一次成了 {twice:.4f}")
+check("分辨后两行：读数 6 该变成 0.9975，漏了是 6，多做一次成了 −0.25（第 8 章 8.6 节）",
+      round(once, 4) == 0.9975 and round(twice, 2) == -0.25)
 check("三者量级排序：浮点误差 < 填错格子 < 漏归一化",
       mini_float_gap < abs(float(out_swap[0] - out_np[0])) < abs(gap))
 check(f"迷你版的浮点误差落在 1e-7 量级（表里印成 {mini_float_gap:.0e}）", 1e-9 < mini_float_gap < 1e-6)
@@ -652,6 +801,16 @@ else:
     check("恰好有一个检查点和这个 ONNX 逐位配对", len(matched) == 1)
     check("配对的是编号最大的那个检查点（每存一次检查点就导一次 ONNX，第 14 章 14.9 节）",
           matched == [ckpt_paths[-1].name])
+# 正文 19.10 节的几处换算：不需要运行目录。
+check("科学计数法：8.830e-03 = 0.00883，0.000e+00 = 0", 8.830e-03 == 0.00883 and 0.000e+00 == 0)
+check("model_0 之后又练了 4 圈，每圈拧 5 × 4 = 20 次（配置里 num_learning_epochs=5、num_mini_batches=4），4 × 20 = 80",
+      4 * (5 * 4) == 80 and (not vel_text or lines_in_order(vel_text, ["num_learning_epochs=5,", "num_mini_batches=4,"])))
+_mjlab_spec = importlib.util.find_spec("mjlab")         # 只找文件位置，不导入 mjlab
+_mjlab_vel = (Path(_mjlab_spec.origin).parent / "tasks" / "velocity" / "velocity_env_cfg.py") if _mjlab_spec and _mjlab_spec.origin else None
+_mjlab_vel_text = _mjlab_vel.read_text(encoding="utf-8") if _mjlab_vel and _mjlab_vel.is_file() else ""
+check("20 秒 = 一个回合的最长时间（mjlab 的 velocity 配置 episode_length_s=20.0）：20 ÷ 0.02 = 1000 步（第 14 章 14.1 节）",
+      round(20 / CONTROL_DT) == 1000 and (not _mjlab_vel_text or "episode_length_s=20.0," in _mjlab_vel_text)
+      and (not vel_text or "episode_length_s" not in vel_text))
 print("这个实验证明了什么、没证明什么：")
 table(["这个实验做到的", "它不能替代的"],
       [["手写九步 = ONNX（数值一致）", "传感器坐标、单位、命令含义两边一致"],
