@@ -885,6 +885,36 @@ plt.close(fig)
 # ---------------------------------------------------------------------------
 banner("7. 梯度裁剪：箭头太长就整体缩短，方向不变")
 
+print("箭头多长，这一步就迈多远：这一步 = α × 梯度，所以步长 = α × 梯度的长度（本章原样的更新式）")
+print(f"  3.4 节那一步 (−0.02, −0.12)：0.02² + 0.12² = 0.0004 + 0.0144 = {0.02**2 + 0.12**2:.4f}，开根号 = {step_small_len:.4f}")
+print(f"  α × 长度 = 0.01 × {grad_norm:.2f} = {alpha_small * grad_norm:.4f}")
+check("3.4 节那一步长 √0.0148 ≈ 0.1217 = 0.01 × 12.17（按印出来的字面值重算也成立）",
+      math.isclose(step_small_len, alpha_small * grad_norm) and round(step_small_len, 4) == 0.1217
+      and round(0.02**2 + 0.12**2, 4) == 0.0148 and round(0.01 * 12.17, 4) == 0.1217)
+ALPHA_CLIP = 0.1                                 # 3.7 节举例用的学习率
+rows = [[length, ALPHA_CLIP * length] for length in (0.5, 5.0, 500.0)]
+table(["梯度的长度", "这一步迈多远 = 0.1 × 长度"], [[num(a), num(s)] for a, s in rows])
+check("α = 0.1：长度 0.5 / 5 / 500 → 迈 0.05 / 0.5 / 50", np.allclose([s for _, s in rows], [0.05, 0.5, 50]))
+check("3.4 节 α = 1 那一步长 1 × 12.17 = 12.17（落到高度 301，第 4 节已核对）", round(1.0 * grad_norm, 2) == 12.17)
+
+check("只有一项的清单，长度就是这一项去掉负号：‖(−3)‖ = sqrt(9) = 3", float(np.linalg.norm([-3.0])) == 3.0)
+
+print("\n一条离谱的数据把梯度拽长（教学构造：50 个点，w 已调好、只拧 b；∂L/∂b = 每个点 2 × 误差，再取平均）")
+err_normal = np.full(50, 0.5)                    # 平常的一批：误差都是 0.5
+err_outlier = err_normal.copy()
+err_outlier[-1] = 500.0                          # 第 50 个点记错了
+db_normal = float(np.mean(2 * err_normal))
+db_outlier = float(np.mean(2 * err_outlier))
+print(f"  平常：(50 × 1) ÷ 50 = {db_normal:g}")
+print(f"  混进一条：(49 × 1 + 2 × 500) ÷ 50 = 1049 ÷ 50 = {db_outlier:g}，是平常的 {db_outlier / db_normal:.2f} 倍")
+print(f"  α = 0.1：平常 b 挪 {ALPHA_CLIP * db_normal:g}，那一批 b 挪 {ALPHA_CLIP * db_outlier:.4g}")
+check("平常一批 ∂L/∂b = 1；混进一条误差 500 的，变成 1049 ÷ 50 = 20.98（长了约 21 倍）",
+      math.isclose(db_normal, 1.0) and math.isclose(db_outlier, 20.98) and 49 * 1 + 2 * 500 == 1049 and round(1049 / 50, 2) == 20.98
+      and round(db_outlier / db_normal) == 21)
+check("α = 0.1：平常 b 挪 0.1，那一批挪 0.1 × 20.98 = 2.098",
+      math.isclose(ALPHA_CLIP * db_normal, 0.1) and math.isclose(ALPHA_CLIP * db_outlier, 2.098) and round(0.1 * 20.98, 3) == 2.098)
+print()
+
 
 def clip_gradient(g, max_norm):
     """整体乘 min(1, 上限 / 长度)：没超长乘 1（原样），超长就缩到上限。"""
@@ -913,9 +943,45 @@ check("(3, 4) 长度 5，上限 1 → 乘 0.2 → (0.6, 0.8)，长度 1", math.i
 check("裁剪不改方向：裁剪前后的单位向量相同，都是 (3, 4) 除以自己的长度 5",
       np.allclose(g_clipped / np.linalg.norm(g_clipped), g_long / 5))
 check("(0.3, 0.4) 长度 0.5 没超上限：min(1, 2) = 1，原样通过", scale_short == 1.0 and np.array_equal(g_same, g_short))
-check("自测：(6, 8) 长度 10，上限 5 → 乘 0.5 → (3, 4)；上限 20 → 乘 1，原样 (6, 8)",
+print("\n为什么不直接把 α 调小：同样两批数据（只拧 b），每一格是“这一步 b 挪多远”")
+ALPHA_SAFE = 0.005                               # 原来的 1/20：让离谱那一批也只挪 0.1 左右
+
+
+def b_move(db, alpha, clip):
+    g = np.array([db])                           # 只拧 b：梯度只有一项，长度就是它去掉负号
+    if clip:
+        g, _ = clip_gradient(g, MAX_NORM)
+    return alpha * float(np.linalg.norm(g))
+
+
+moves = {"α = 0.1，不裁剪": (ALPHA_CLIP, False),
+         f"α 降到 {ALPHA_SAFE:g}": (ALPHA_SAFE, False),
+         f"α = 0.1，加裁剪（上限 {MAX_NORM:g}）": (ALPHA_CLIP, True)}
+rows = [[name, b_move(db_normal, a, c), b_move(db_outlier, a, c)] for name, (a, c) in moves.items()]
+table(["做法", "平常的一批（长度 1）", "混进离谱数据的一批（长度 20.98）"], [[r[0], num(r[1]), num(r[2])] for r in rows])
+check("α = 0.1 不裁剪：0.1 对 2.098", math.isclose(rows[0][1], 0.1) and math.isclose(rows[0][2], 2.098))
+check("α 降到 0.005：平常只挪 0.005（慢了 20 倍），离谱那一批 0.005 × 20.98 = 0.1049",
+      math.isclose(rows[1][1], 0.005) and math.isclose(rows[1][2], 0.1049) and round(0.005 * 20.98, 4) == 0.1049
+      and round(rows[0][1] / rows[1][1]) == 20)
+check("α = 0.1 加裁剪（上限 1）：长度 1 不算超长、原样挪 0.1；20.98 先缩到 1，也挪 0.1",
+      math.isclose(rows[2][1], 0.1) and math.isclose(rows[2][2], 0.1))
+check("裁剪不改方向：离谱那一批裁剪前后都是正数（50 个误差全为正，都想让 b 往小拧）",
+      clip_gradient(np.array([db_outlier]), MAX_NORM)[0][0] > 0 and np.all(err_outlier > 0))
+
+check("自测①：(6, 8) 长度 10，上限 5 → 乘 0.5 → (3, 4)；上限 20 → 乘 1，原样 (6, 8)",
       np.allclose(clip_gradient(np.array([6.0, 8.0]), 5.0)[0], [3, 4]) and clip_gradient(np.array([6.0, 8.0]), 5.0)[1] == 0.5
       and np.array_equal(clip_gradient(np.array([6.0, 8.0]), 20.0)[0], [6, 8]) and clip_gradient(np.array([6.0, 8.0]), 20.0)[1] == 1.0)
+err_flip = err_normal.copy()
+err_flip[-1] = -200.0                            # 自测②：离谱的那个预测比真值低 200
+db_flip = float(np.mean(2 * err_flip))
+db_flip_clipped = float(clip_gradient(np.array([db_flip]), MAX_NORM)[0][0])
+print(f"\n自测②：(49 × 1 + 2 × (−200)) ÷ 50 = −351 ÷ 50 = {db_flip:g}；不裁剪 b 挪 {-ALPHA_CLIP * db_flip:+.3g}，"
+      f"裁剪后梯度 {db_flip_clipped:g}、b 挪 {-ALPHA_CLIP * db_flip_clipped:+.3g}")
+check("自测②：(49 − 400) ÷ 50 = −7.02；不裁剪 b 往大挪 0.702；裁剪后缩成 −1，往大挪 0.1",
+      math.isclose(db_flip, -7.02) and round(-351 / 50, 2) == -7.02 and math.isclose(-ALPHA_CLIP * db_flip, 0.702)
+      and math.isclose(db_flip_clipped, -1.0) and math.isclose(-ALPHA_CLIP * db_flip_clipped, 0.1))
+check("自测②：这一次离谱的点把方向也拽反了（49 个误差为正，平均却是负的）",
+      np.sum(err_flip > 0) == 49 and db_flip < 0)
 
 # ---------------------------------------------------------------------------
 banner("7b. 画图：figures/ch03_gradient_clipping.png（箭头缩短、方向不变）")
