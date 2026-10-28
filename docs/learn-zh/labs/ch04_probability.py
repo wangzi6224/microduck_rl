@@ -18,7 +18,7 @@ import torch
 
 import _common
 from _common import banner, check, done, lines_in_order, num, savefig, table
-from _draw import (BLUE, CELL_EDGE, FAINT, FS_NOTE, FS_SMALL, FS_STEP, FS_TICK, FS_TITLE, GREEN, INK, MUTED, ORANGE,
+from _draw import (BLUE, CELL, CELL_EDGE, CELL_HOT, FAINT, FS_NOTE, FS_SMALL, FS_STEP, FS_TICK, FS_TITLE, GREEN, INK, MUTED, ORANGE,
                    WHITE_BOX, arrow, cell, data_axes, hand, lesson_cells, lesson_figure, lesson_panel, note, panel_note,
                    panel_title, plt)
 
@@ -106,6 +106,38 @@ check("字面值重算：100000 × 0.294 = 29,400；× 0.0588 = 5,880；× 0.005
 check("每一行的实际个数和 10 万 × 概率相差都不到 3 个标准差（抽样的随机起伏，4.5 节）",
       all(abs(c - N_DRAWS * d / width) < 3 * math.sqrt(N_DRAWS * d / width) + 1 for c, d in zip(shrink_counts, SHRINK)))
 
+# 格子长什么样：每 0.1 伏切一刀，一格就是数轴上的一小段电压；每个电压掉进它所在的那一格，同一格的摞起来
+GRID_W = 0.1
+n_grid = max(1, int(round(width / GRID_W)))
+grid_edges = lo + GRID_W * np.arange(n_grid + 1)
+N_FIRST, N_SOME = 12, 1000
+first = volts[:N_FIRST]
+first_bin = np.searchsorted(grid_edges, first, side="right") - 1      # 第几格（从 0 数）；正好压在刀口上的算进右边那格
+first_counts = np.bincount(first_bin, minlength=n_grid)
+some_counts = np.histogram(volts[:N_SOME], bins=grid_edges)[0]
+grid7 = int(round((seg_lo - lo) / GRID_W))                            # 7.0–7.1 那一格
+grid_name = lambda b: f"{grid_edges[b]:.1f} 到 {grid_edges[b + 1]:.1f}"
+print(f"\n格子长什么样：从 {lo} 到 {hi}，每 {GRID_W:g} 伏切一刀，切成 {n_grid} 格"
+      f"（第 1 格 {grid_name(0)}，第 2 格 {grid_name(1)}，……，第 {n_grid} 格 {grid_name(n_grid - 1)}）")
+print(f"前 {N_FIRST} 个电压，各自掉进它所在的那一格：")
+table(["电压（伏）", "落在", "第几格"], [[f"{x:.3f}", grid_name(b), int(b) + 1] for x, b in zip(first, first_bin)])
+print(f"  {N_FIRST} 个里，摞得最多的一格有 {first_counts.max()} 个，一个也没有的格有 {int(np.sum(first_counts == 0))} 个")
+print(f"前 {N_SOME:,} 个：每格 {some_counts.min()}–{some_counts.max()} 个，平均 {N_SOME:,} ÷ {n_grid} ≈ {N_SOME / n_grid:.1f} 个；"
+      f"{grid_name(grid7)} 那格 {some_counts[grid7]} 个")
+check("切格子：6.5 到 8.2 每 0.1 伏一刀，切成 17 格；第 1 格 6.5 到 6.6，第 2 格 6.6 到 6.7，第 17 格 8.1 到 8.2",
+      n_grid == 17 and [grid_name(b) for b in (0, 1, 16)] == ["6.5 到 6.6", "6.6 到 6.7", "8.1 到 8.2"])
+check("正文引用的数：前 12 个里 6.594 掉进第 1 格，7.884 掉进 7.8 到 7.9，7.007 掉进 7.0 到 7.1，6.945 和 6.967 都掉进 6.9 到 7.0（摞了 2 个）",
+      [f"{x:.3f}" for x in first[[7, 2, 1, 0, 8]]] == ["6.594", "7.884", "7.007", "6.945", "6.967"]
+      and first_bin[7] == 0 and grid_name(first_bin[2]) == "7.8 到 7.9" and first_bin[1] == grid7
+      and grid_name(first_bin[0]) == grid_name(first_bin[8]) == "6.9 到 7.0" and first_counts[first_bin[0]] == 2)
+check("前 12 个：摞得最多的一格是 2 个（只有 6.9 到 7.0 那一格），有 6 格一个也没有",
+      first_counts.max() == 2 and int(np.sum(first_counts == 2)) == 1 and int(np.sum(first_counts == 0)) == 6)
+check("前 1,000 个：每格 46 到 72 个，平均 1000 ÷ 17 ≈ 58.8 个；7.0 到 7.1 那格 51 个",
+      some_counts.min() == 46 and some_counts.max() == 72 and round(1000 / 17, 1) == 58.8 and some_counts[grid7] == 51)
+check("前 1,000 个：最多的和最少的都和平均 58.8 差了两成多；10 万个时，每格都在平均 5,882 的 3% 以内",
+      some_counts.max() / (N_SOME / n_grid) - 1 > 0.2 and 1 - some_counts.min() / (N_SOME / n_grid) > 0.2
+      and bool(np.all(np.abs(np.histogram(volts, bins=grid_edges)[0] / (N_DRAWS / n_grid) - 1) < 0.03)))
+
 # 直方图：切格子、数个数、除以 10 万得占比；再除以格宽，就成了密度
 HIST_WIDTHS = (0.1, 0.05, 0.01)
 hist = {}
@@ -123,6 +155,7 @@ check("每 0.1 伏一格：17 格，每格约 100000 ÷ 17 ≈ 5,882 个，占�
       and round(frac1.min() * N_DRAWS) == 5743 and round(frac1.max() * N_DRAWS) == 5998 and round(frac1[bin7] * N_DRAWS) == 5878)
 check("每 0.05 伏一格：34 格，每格约 100000 ÷ 34 ≈ 2,941 个，占比 1/34 ≈ 0.0294——柱子矮了一半",
       len(hist[0.05][1]) == 34 and round(N_DRAWS / 34) == 2941 and round(1 / 34, 4) == 0.0294 and math.isclose(1 / 34, (1 / 17) / 2))
+check("分糖的比方：100 颗糖分给 17 个人，每人约 6 颗；分给 34 个人，每人约 3 颗", round(100 / 17) == 6 and round(100 / 34) == 3)
 check("每 0.01 伏一格：170 格，占比约 0.00588", len(hist[0.01][1]) == 170 and round(1 / 170, 5) == 0.00588)
 check("除以格宽，三种切法一样高：0.0588 ÷ 0.1 = 0.0294 ÷ 0.05 = 0.00588 ÷ 0.01 = 0.588（字面值重算）",
       round(0.0588 / 0.1, 3) == round(0.0294 / 0.05, 3) == round(0.00588 / 0.01, 3) == 0.588
@@ -183,7 +216,96 @@ check("U(0, 1) 小于 0.1 的概率就是这一段的宽度 0.1（抽 10 万个�
 check("自测：U(2, 6) 的高度 0.25，落在 3–4 的概率 0.25", 1 / (6 - 2) == 0.25 and (4 - 3) / (6 - 2) == 0.25)
 
 # ---------------------------------------------------------------------------
-banner("2b. 画图：figures/ch04_histogram_to_density.png（格子越细柱子越矮；除以格宽就稳住了）")
+banner("2b. 画图：figures/ch04_what_is_a_bin.png（格子长什么样：每个电压掉进它所在的那一格，摞起来就是柱子）")
+if not (finite(lo, hi) and 0 < width < 3 and 3 <= n_grid <= 40 and 0 <= grid7 < n_grid):
+    print("  电压范围改得太离谱，这张图跳过。")
+else:
+    fig = plt.figure(figsize=(9.4, 17.0))
+    gs = fig.add_gridspec(3, 1, height_ratios=[0.6, 1.0, 1.55], hspace=0.62, left=0.13, right=0.95, top=0.925, bottom=0.085)
+    fig.suptitle("一格是一小段电压：电压掉进各自那一格，摞起来就是柱子", fontsize=FS_TITLE, fontweight="bold", color=INK, y=0.985)
+    X_LIM = (lo - 0.2, hi + 0.2)
+    X_TICKS = [*grid_edges[::5], hi] if not math.isclose(grid_edges[::5][-1], hi) else list(grid_edges[::5])
+    centers = grid_edges[:-1] + GRID_W / 2
+
+    def ruler(ax, y0, h):
+        """把数轴画成一排格子：每 0.1 伏一格，7.0–7.1 那格涂橙色。"""
+        for b in range(n_grid):
+            hot = b == grid7
+            ax.add_patch(plt.Rectangle((grid_edges[b], y0), GRID_W, h, facecolor=CELL_HOT if hot else CELL,
+                                       edgecolor=ORANGE if hot else CELL_EDGE, lw=1.8 if hot else 1.0, zorder=3 if hot else 2))
+
+    def strip_axes(ax, ylim):
+        """只要横轴（电压）、不要纵轴的面板。"""
+        data_axes(ax, "电压（伏）", "", grid=False)
+        ax.set_xlim(*X_LIM)
+        ax.set_ylim(*ylim)
+        ax.set_xticks(X_TICKS, [f"{t:.1f}" for t in X_TICKS])
+        ax.set_yticks([])
+        ax.spines["left"].set_visible(False)
+
+    ax = fig.add_subplot(gs[0])
+    strip_axes(ax, (0, 1.35))
+    ruler(ax, 0, 0.3)
+    leader = dict(arrowstyle="-", lw=1.4, shrinkA=2, shrinkB=2)
+    ax.annotate(f"第 1 格：{grid_name(0)}", xy=(centers[0], 0.31), xytext=(X_LIM[0] + 0.02, 0.75), fontsize=FS_SMALL, color=INK,
+                ha="left", va="center", arrowprops=dict(color=INK, **leader))
+    ax.annotate(f"第 {n_grid} 格：{grid_name(n_grid - 1)}", xy=(centers[-1], 0.31), xytext=(X_LIM[1], 0.75), fontsize=FS_SMALL,
+                color=INK, ha="right", va="center", arrowprops=dict(color=INK, **leader))
+    ax.annotate(f"{grid_name(grid7)} 这一格：电压在 {grid_edges[grid7]:.1f} 和 {grid_edges[grid7 + 1]:.1f} 之间",
+                xy=(centers[grid7], 0.31), xytext=(centers[grid7], 1.15), fontsize=FS_SMALL, color=ORANGE, ha="center", va="center",
+                arrowprops=dict(color=ORANGE, **leader))
+    panel_title(fig, [ax], f"① 从 {lo} 到 {hi}，每 {GRID_W:g} 伏切一刀：切成 {n_grid} 格")
+    panel_note(fig, [ax], "一格就是数轴上的一小段电压，\n像统计成绩时的分数段：60–69 分一段，70–79 分一段。")
+
+    ax = fig.add_subplot(gs[1])
+    strip_axes(ax, (-0.75, 3.3))
+    ruler(ax, -0.6, 0.6)
+    dot_color = [ORANGE if b == grid7 else BLUE for b in first_bin]
+    ax.vlines(first, -0.6, 0, colors=dot_color, lw=2.2, zorder=4)
+    stacked = np.zeros(n_grid, dtype=int)
+    for b, c in zip(first_bin, dot_color):
+        ax.scatter(centers[b], 0.3 + 0.5 * stacked[b], s=330, color=c, edgecolor="white", lw=1.2, zorder=5)
+        stacked[b] += 1
+    i_min = int(np.argmin(first))
+    b_min = int(first_bin[i_min])
+    ax.annotate(f"{first[i_min]:.3f}：在 {grid_edges[b_min]:.1f} 和 {grid_edges[b_min + 1]:.1f} 之间\n→ 掉进第 {b_min + 1} 格",
+                xy=(centers[b_min], 0.45), xytext=(X_LIM[0] + 0.02, 2.3), fontsize=FS_SMALL, color=BLUE, ha="left", va="bottom",
+                linespacing=1.35, arrowprops=dict(color=BLUE, **leader))
+    b_top = int(np.argmax(first_counts))
+    if first_counts[b_top] >= 2:
+        same = " 和 ".join(f"{x:.3f}" for x in first[first_bin == b_top])
+        ax.annotate(f"{same} 都在 {grid_edges[b_top]:.1f} 和 {grid_edges[b_top + 1]:.1f} 之间\n→ 这一格摞了 {first_counts[b_top]} 个",
+                    xy=(centers[b_top] + 0.02, 0.3 + 0.5 * (first_counts[b_top] - 1) + 0.12), xytext=(centers[b_top] + 0.3, 1.5),
+                    fontsize=FS_SMALL, color=BLUE, ha="left", va="bottom", linespacing=1.35, arrowprops=dict(color=BLUE, **leader))
+    panel_title(fig, [ax], f"② 前 {N_FIRST} 个电压，各自掉进它所在的那一格")
+    panel_note(fig, [ax], "小竖线是每个电压的确切位置，圆点摞在它所在那一格的正上方。\n"
+                          f"才抽 {N_FIRST} 个：最多的一格摞了 {first_counts.max()} 个，有 {int(np.sum(first_counts == 0))} 格一个也没有。")
+
+    ax = fig.add_subplot(gs[2])
+    data_axes(ax, "电压（伏）", "这一格里有几个", grid=False)
+    ax.set_xlim(*X_LIM)
+    ax.set_ylim(0, 95)
+    ax.set_xticks(X_TICKS, [f"{t:.1f}" for t in X_TICKS])
+    ax.bar(grid_edges[:-1], some_counts, width=GRID_W, align="edge", color=CELL, edgecolor=CELL_EDGE, lw=1.0, zorder=2)
+    ax.bar(grid_edges[grid7], some_counts[grid7], width=GRID_W, align="edge", color=CELL_HOT, edgecolor=ORANGE, lw=1.8, zorder=3)
+    for b, n in enumerate(some_counts):                       # 一个电压画一小横道，像硬币一样摞在自己那一格里
+        ax.plot(np.full(n, centers[b]), np.arange(n) + 0.5, ls="none", marker="_", ms=19, mew=2.2,
+                color=ORANGE if b == grid7 else BLUE, zorder=4)
+    ax.axhline(N_SOME / n_grid, color=INK, ls="--", lw=1.4, zorder=5)
+    ax.text(X_LIM[0] + 0.02, 88, f"黑色虚线：平均每格 {N_SOME:,} ÷ {n_grid} ≈ {N_SOME / n_grid:.1f} 个", fontsize=FS_SMALL, color=INK,
+            ha="left", va="center")
+    ax.annotate(f"{grid_name(grid7)} 这一格：{some_counts[grid7]} 个", xy=(centers[grid7], some_counts[grid7] + 1.5),
+                xytext=(centers[grid7], 79), fontsize=FS_SMALL, color=ORANGE, ha="center", va="center", bbox=WHITE_BOX,
+                arrowprops=dict(color=ORANGE, **leader))
+    panel_title(fig, [ax], f"③ 前 {N_SOME:,} 个：同一格的摞成一摞，这一摞就是一根柱子")
+    panel_note(fig, [ax], "每一小横道是一个电压，像硬币一样摞在自己那一格里；\n"
+                          f"多的一格 {some_counts.max()} 个，少的 {some_counts.min()} 个。抽到 10 万个，每格约 {N_DRAWS / n_grid:,.0f} 个，\n"
+                          "密得分不清，就直接画成实心的柱子（下一张图）。")
+    savefig(fig, "ch04_what_is_a_bin")
+    plt.close(fig)
+
+# ---------------------------------------------------------------------------
+banner("2c. 画图：figures/ch04_histogram_to_density.png（格子越细柱子越矮；除以格宽就稳住了）")
 if not (finite(lo, hi, density) and 0 < width < 3 and lo <= seg_lo < seg_lo + 0.1 <= hi):
     print("  电压范围改得太离谱，这张图跳过。")
 else:
@@ -247,7 +369,7 @@ else:
     plt.close(fig)
 
 # ---------------------------------------------------------------------------
-banner("2c. 画图：figures/ch04_area_is_probability.png（面积才是概率；高度可以超过 1）")
+banner("2d. 画图：figures/ch04_area_is_probability.png（面积才是概率；高度可以超过 1）")
 if not (finite(lo, hi, density) and 0 < width < 3):
     print("  电压范围改得太离谱，这张图跳过。")
 else:
@@ -296,7 +418,7 @@ else:
     plt.close(fig)
 
 # ---------------------------------------------------------------------------
-banner("2d. 画图：figures/ch04_uneven_density.png（密度高低不平时，概率还是面积）")
+banner("2e. 画图：figures/ch04_uneven_density.png（密度高低不平时，概率还是面积）")
 fig = plt.figure(figsize=(9.4, 13.2))
 gs = fig.add_gridspec(2, 1, hspace=0.62, left=0.12, right=0.95, top=0.89, bottom=0.11)
 fig.suptitle("密度高低不平时，概率还是面积：跨过台阶就拆成两块", fontsize=FS_TITLE, fontweight="bold", color=INK, y=0.975)
