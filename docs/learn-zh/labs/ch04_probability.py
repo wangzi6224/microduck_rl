@@ -84,6 +84,56 @@ check(f"抽 10 万个：落在 7.0–7.5 的比例 {frac_seg:.3f} 和理论值 {
 check("抽 10 万个：没有一个恰好等于 7", n_exact == 0)
 check("正文引用的数：10 万个里落在 7.0–7.5 的占 0.293", round(frac_seg, 3) == 0.293)
 
+# 左端钉在 7.0，右端一点点收窄：概率跟着宽度一起缩，缩成一个点就是 0
+SHRINK = (0.5, 0.1, 0.01, 0.001, 0.0001)
+shrink_rows, shrink_counts = [], []
+for d in SHRINK:
+    n_in = int(np.sum((volts >= seg_lo) & (volts < seg_lo + d)))
+    shrink_counts.append(n_in)
+    p_shown = float(f"{d / width:.3g}")                    # 正文印的是三位有效数字，“10 万 × 概率”就拿它来乘
+    expect = N_DRAWS * p_shown
+    shrink_rows.append([f"{seg_lo:.1f} 到 {seg_lo + d:g}", f"{d:g}", np.format_float_positional(p_shown, trim="-"), f"{expect:,.0f}" if expect >= 100 else f"{expect:.3g}", f"{n_in:,}"])
+shrink_rows.append(["恰好 7", "0", "0", "0", f"{n_exact:,}"])
+print("\n把这一段从右边一点点收窄（左端一直是 7.0）：")
+table(["这一段", "宽度（伏）", "概率 = 宽度 ÷ 1.7", "10 万 × 概率", "实际落进去"], shrink_rows)
+check("正文表里的概率：0.5/1.7 → 0.294，0.1/1.7 → 0.0588，0.01/1.7 → 0.00588，0.001/1.7 → 0.000588，0.0001/1.7 → 0.0000588",
+      [f"{d / width:.3g}" for d in SHRINK] == ["0.294", "0.0588", "0.00588", "0.000588", "5.88e-05"])
+check("正文表里的个数：10 万个里落进去 29,265、5,878、599、61、7 个，恰好等于 7 的 0 个",
+      shrink_counts == [29265, 5878, 599, 61, 7] and n_exact == 0)
+check("字面值重算：100000 × 0.294 = 29,400；× 0.0588 = 5,880；× 0.00588 = 588；× 0.000588 = 58.8；× 0.0000588 = 5.88",
+      round(100000 * 0.294) == 29400 and round(100000 * 0.0588) == 5880 and round(100000 * 0.00588) == 588
+      and round(100000 * 0.000588, 1) == 58.8 and round(100000 * 0.0000588, 2) == 5.88)
+check("每一行的实际个数和 10 万 × 概率相差都不到 3 个标准差（抽样的随机起伏，4.5 节）",
+      all(abs(c - N_DRAWS * d / width) < 3 * math.sqrt(N_DRAWS * d / width) + 1 for c, d in zip(shrink_counts, SHRINK)))
+
+# 直方图：切格子、数个数、除以 10 万得占比；再除以格宽，就成了密度
+HIST_WIDTHS = (0.1, 0.05, 0.01)
+hist = {}
+for w in HIST_WIDTHS:
+    n_bins = max(1, int(round(width / w)))
+    edges = lo + w * np.arange(n_bins + 1)
+    counts_w = np.histogram(volts, bins=edges)[0]
+    hist[w] = (edges, counts_w / N_DRAWS)
+    print(f"\n每 {w:g} 伏一格：{n_bins} 格；每格约 {N_DRAWS / n_bins:,.0f} 个（实际 {counts_w.min():,}–{counts_w.max():,}），"
+          f"占比约 1/{n_bins} = {1 / n_bins:.3g}；占比 ÷ 格宽 = {1 / n_bins:.3g} ÷ {w:g} = {1 / n_bins / w:.3f}")
+edges1, frac1 = hist[0.1]
+bin7 = int(round((seg_lo - lo) / 0.1))                     # 7.0–7.1 那一格
+check("每 0.1 伏一格：17 格，每格约 100000 ÷ 17 ≈ 5,882 个，占比 1/17 ≈ 0.0588；实际每格 5,743 到 5,998 个，7.0–7.1 那格 5,878 个",
+      len(frac1) == 17 and round(N_DRAWS / 17) == 5882 and round(1 / 17, 4) == 0.0588
+      and round(frac1.min() * N_DRAWS) == 5743 and round(frac1.max() * N_DRAWS) == 5998 and round(frac1[bin7] * N_DRAWS) == 5878)
+check("每 0.05 伏一格：34 格，每格约 100000 ÷ 34 ≈ 2,941 个，占比 1/34 ≈ 0.0294——柱子矮了一半",
+      len(hist[0.05][1]) == 34 and round(N_DRAWS / 34) == 2941 and round(1 / 34, 4) == 0.0294 and math.isclose(1 / 34, (1 / 17) / 2))
+check("每 0.01 伏一格：170 格，占比约 0.00588", len(hist[0.01][1]) == 170 and round(1 / 170, 5) == 0.00588)
+check("除以格宽，三种切法一样高：0.0588 ÷ 0.1 = 0.0294 ÷ 0.05 = 0.00588 ÷ 0.01 = 0.588（字面值重算）",
+      round(0.0588 / 0.1, 3) == round(0.0294 / 0.05, 3) == round(0.00588 / 0.01, 3) == 0.588
+      and all(math.isclose((1 / len(f)) / w, density) for w, (_, f) in hist.items()))
+check("实际的柱子除以格宽后都在 0.588 上下：0.1 伏格在 ±0.03 以内，0.05 伏格在 ±0.04 以内",
+      bool(np.all(np.abs(frac1 / 0.1 - density) < 0.03)) and bool(np.all(np.abs(hist[0.05][1] / 0.05 - density) < 0.04)))
+check("乘回去：0.588 × 0.1 = 0.0588——柱子的面积（高 × 宽）就是这一格的占比；17 格的面积加起来是 1",
+      round(0.588 * 0.1, 4) == 0.0588 and math.isclose(float(np.sum(frac1 / 0.1 * 0.1)), 1.0))
+check("自测：每 0.17 伏一格，1.7 ÷ 0.17 = 10 格，每格占比约 0.1，0.1 ÷ 0.17 = 0.588",
+      round(1.7 / 0.17) == 10 and round(0.1 / 0.17, 3) == 0.588)
+
 narrow_w = 0.2                                    # 第二个均匀分布 U(0, 0.2)：窄到高度超过 1
 narrow_density = 1 / narrow_w
 print(f"\n窄一点的 U(0, 0.2)：高度 = 1 / 0.2 = {num(narrow_density)}（超过 1 了）")
@@ -99,13 +149,105 @@ check("换成毫伏：密度从 0.588 变成 1/1700 ≈ 0.000588，概率仍是 
       round(density_mv, 6) == 0.000588 and math.isclose(density_mv * 500, p_seg))
 check("字面值重算：1 / 1700 → 0.000588；0.000588 × 500 → 0.294；5 × 0.01 = 0.05；5 × 0.2 = 1",
       round(1 / 1700, 6) == 0.000588 and round(0.000588 * 500, 3) == 0.294 and round(5 * 0.01, 2) == 0.05 and 5 * 0.2 == 1)
+
+# 不均匀的密度（教学构造）：一箱旧电池，60% 在 6.5–7.0 伏，40% 在 7.0–8.2 伏，每一段内部处处机会均等
+OLD_STEP, OLD_LO, OLD_HI, OLD_P_LOW = 7.0, 6.5, 8.2, 0.6
+h_low = OLD_P_LOW / (OLD_STEP - OLD_LO)                    # 0.6 ÷ 0.5 = 1.2
+h_high = (1 - OLD_P_LOW) / (OLD_HI - OLD_STEP)             # 0.4 ÷ 1.2 = 1/3
+ask_lo, ask_hi = 6.8, 7.2
+area_left = h_low * (OLD_STEP - ask_lo)
+area_right = h_high * (ask_hi - OLD_STEP)
+p_ask = area_left + area_right
+p_naive = (ask_hi - ask_lo) / (OLD_HI - OLD_LO)
+r_old = np.random.default_rng(8)
+n_low = int(round(N_DRAWS * OLD_P_LOW))
+old_volts = np.concatenate([r_old.uniform(OLD_LO, OLD_STEP, n_low), r_old.uniform(OLD_STEP, OLD_HI, N_DRAWS - n_low)])
+frac_ask = float(np.mean((old_volts >= ask_lo) & (old_volts <= ask_hi)))
+print(f"\n一箱旧电池（教学构造）：{OLD_P_LOW:g} 的概率在 {OLD_LO}–{OLD_STEP} 伏，{1 - OLD_P_LOW:g} 在 {OLD_STEP}–{OLD_HI} 伏")
+print(f"  两段的高度：{OLD_P_LOW:g} ÷ {OLD_STEP - OLD_LO:g} = {h_low:g}；{1 - OLD_P_LOW:g} ÷ {OLD_HI - OLD_STEP:g} = {h_high:.3f}")
+print(f"  落在 {ask_lo}–{ask_hi} 伏：左块 {h_low:g} × 0.2 = {area_left:.2f}，右块 (1/3) × 0.2 = {area_right:.4f}，合计 {p_ask:.4f}；"
+      f"只看宽度的比例 0.4 ÷ 1.7 = {p_naive:.3f}（错的）")
+print(f"  真的抽 {N_DRAWS} 个（{n_low} 个从左段、{N_DRAWS - n_low} 个从右段均匀抽）：落在 {ask_lo}–{ask_hi} 的占 {frac_ask:.3f}")
+check("旧电池：左段高 0.6 ÷ 0.5 = 1.2（超过 1），右段高 0.4 ÷ 1.2 = 1/3 ≈ 0.333；总面积 1.2 × 0.5 + (1/3) × 1.2 = 0.6 + 0.4 = 1",
+      math.isclose(h_low, 1.2) and math.isclose(h_high, 1 / 3) and round(h_high, 3) == 0.333
+      and math.isclose(h_low * 0.5 + h_high * 1.2, 1.0) and round(1.2 * 0.5, 2) == 0.6 and round(1.2 / 3, 2) == 0.4)
+check("旧电池落在 6.8–7.2 伏：1.2 × 0.2 = 0.24，(1/3) × 0.2 = 0.0667，0.24 + 0.0667 = 0.3067 ≈ 0.307（字面值重算也成立）",
+      round(area_left, 2) == 0.24 and round(area_right, 4) == 0.0667 and round(p_ask, 3) == 0.307
+      and round(1.2 * 0.2, 2) == 0.24 and round(0.2 / 3, 4) == 0.0667 and round(0.24 + 0.0667, 4) == 0.3067)
+check("只看宽度的比例 0.4 ÷ 1.7 = 0.235 是错的：差了 0.07 以上", round(p_naive, 3) == 0.235 and p_ask - p_naive > 0.07)
+check(f"抽 10 万个旧电池：落在 6.8–7.2 的比例 {frac_ask:.3f} 和面积 {p_ask:.3f} 相差不到 0.005", abs(frac_ask - p_ask) < 0.005)
+check("正文引用的数：10 万个旧电池里落在 6.8–7.2 的占 0.307", round(frac_ask, 3) == 0.307)
 check("Math.random() 就是 U(0, 1)：宽 1，高度 1", 1 / (1 - 0) == 1)
 frac_small = float(np.mean(np.random.default_rng(4).uniform(0, 1, size=N_DRAWS) < 0.1))
 check("U(0, 1) 小于 0.1 的概率就是这一段的宽度 0.1（抽 10 万个核对，容差 0.005）——“以指定的概率做一件事”的写法", abs(frac_small - 0.1) < 0.005)
 check("自测：U(2, 6) 的高度 0.25，落在 3–4 的概率 0.25", 1 / (6 - 2) == 0.25 and (4 - 3) / (6 - 2) == 0.25)
 
 # ---------------------------------------------------------------------------
-banner("2b. 画图：figures/ch04_area_is_probability.png（面积才是概率；高度可以超过 1）")
+banner("2b. 画图：figures/ch04_histogram_to_density.png（格子越细柱子越矮；除以格宽就稳住了）")
+if not (finite(lo, hi, density) and 0 < width < 3 and lo <= seg_lo < seg_lo + 0.1 <= hi):
+    print("  电压范围改得太离谱，这张图跳过。")
+else:
+    fig = plt.figure(figsize=(9.4, 18.6))
+    gs = fig.add_gridspec(3, 1, hspace=0.66, left=0.13, right=0.95, top=0.925, bottom=0.075)
+    fig.suptitle("柱高 ÷ 格宽：怎么切都一样高，这个高度就是密度", fontsize=FS_TITLE, fontweight="bold", color=INK, y=0.985)
+    X_LIM = (lo - 0.2, hi + 0.2)
+    F_TOP = 0.078
+    bin7_half = int(round((seg_lo - lo) / 0.05))            # 7.0–7.05 那一格
+
+    ax = fig.add_subplot(gs[0])
+    data_axes(ax, "电压（伏）", "占比（个数 ÷ 10 万）")
+    ax.set_xlim(*X_LIM)
+    ax.set_ylim(0, F_TOP)
+    ax.bar(edges1[:-1], frac1, width=0.1, align="edge", color="#dbe7f3", edgecolor=BLUE, lw=1.0, zorder=2)
+    ax.bar(edges1[bin7], frac1[bin7], width=0.1, align="edge", color=ORANGE, edgecolor=BLUE, lw=1.0, zorder=3)
+    ax.axhline(1 / 17, color=INK, ls="--", lw=1.4, zorder=1)
+    ax.text(X_LIM[1], 1 / 17 + 0.002, f"约 1 ÷ 17 = {1 / 17:.4f}", fontsize=FS_SMALL, color=INK, ha="right", va="bottom")
+    ax.annotate(f"7.0–7.1 这一格：{round(frac1[bin7] * N_DRAWS):,} 个\n占比 {round(frac1[bin7] * N_DRAWS):,} ÷ 100,000 = {frac1[bin7]:.4f}",
+                xy=(seg_lo + 0.05, frac1[bin7] * 0.6), xytext=(lo + 0.05, 0.0035), fontsize=FS_SMALL, color=ORANGE, ha="left", va="bottom",
+                linespacing=1.35, bbox=WHITE_BOX, arrowprops=dict(arrowstyle="-", lw=1.4, color=ORANGE, shrinkA=2, shrinkB=2))
+    panel_title(fig, [ax], "① 每 0.1 伏一格：17 根柱子，每根占比约 0.0588")
+    panel_note(fig, [ax], "17 根柱子的占比加起来是 1：10 万个电压，每个都落在某一格里。")
+
+    ax = fig.add_subplot(gs[1])
+    data_axes(ax, "电压（伏）", "占比（个数 ÷ 10 万）")
+    ax.set_xlim(*X_LIM)
+    ax.set_ylim(0, F_TOP)
+    edges2, frac2 = hist[0.05]
+    ax.bar(edges2[:-1], frac2, width=0.05, align="edge", color="#dff0e8", edgecolor=GREEN, lw=0.8, zorder=2)
+    ax.bar(edges2[bin7_half], frac2[bin7_half], width=0.05, align="edge", color=ORANGE, edgecolor=GREEN, lw=0.8, zorder=3)
+    ax.axhline(1 / 17, color=FAINT, ls=":", lw=1.8, zorder=1)
+    ax.text(X_LIM[0] + 0.03, 1 / 17 + 0.002, f"上一幅的高度 {1 / 17:.4f}", fontsize=15, color=MUTED, ha="left", va="bottom")
+    ax.axhline(1 / 34, color=INK, ls="--", lw=1.4, zorder=1)
+    ax.text(X_LIM[0] + 0.03, 1 / 34 + 0.0015, f"约 1 ÷ 34 = {1 / 34:.4f}", fontsize=FS_SMALL, color=INK, ha="left", va="bottom", bbox=WHITE_BOX,
+            zorder=5)
+    arrow(ax, (hi + 0.1, 1 / 17 - 0.001), (hi + 0.1, 1 / 34 + 0.001), MUTED, lw=2.2)
+    ax.text(hi + 0.05, (1 / 17 + 1 / 34) / 2, "矮了一半", fontsize=FS_SMALL, color=MUTED, ha="right", va="center")
+    panel_title(fig, [ax], "② 改成每 0.05 伏一格：34 根，每根只剩约 0.0294")
+    panel_note(fig, [ax], "格子细一半，每格分到的电压就少一半。切到一个点那么细，柱子就矮成 0。\n"
+                          "这样画，图的高矮取决于“怎么切”，不是电压本身的样子。")
+
+    ax = fig.add_subplot(gs[2])
+    data_axes(ax, "电压（伏）", "密度（每伏分到多少概率）")
+    ax.set_xlim(*X_LIM)
+    ax.set_ylim(0, 1.0)
+    ax.fill_between([edges1[bin7], edges1[bin7] + 0.1], 0, frac1[bin7] / 0.1, color=ORANGE, alpha=0.85, zorder=2, lw=0)
+    ax.stairs(frac2 / 0.05, edges2, color=GREEN, lw=1.6, zorder=3)
+    ax.stairs(frac1 / 0.1, edges1, color=BLUE, lw=2.6, zorder=4)
+    ax.axhline(density, color=INK, ls="--", lw=1.4, zorder=1)
+    ax.text(X_LIM[0] + 0.03, density + 0.025, f"1 ÷ 1.7 = {density:.3f}", fontsize=FS_SMALL, color=INK, ha="left", va="bottom")
+    hand(ax, lo + 0.05, 0.91, f"蓝线 = ① 的柱子 ÷ 0.1：0.0588 ÷ 0.1 = {0.0588 / 0.1:.3f}", color=BLUE, fontsize=FS_SMALL, ha="left")
+    hand(ax, lo + 0.05, 0.80, f"绿线 = ② 的柱子 ÷ 0.05：0.0294 ÷ 0.05 = {0.0294 / 0.05:.3f}", color=GREEN, fontsize=FS_SMALL, ha="left")
+    ax.annotate(f"这一格的面积\n= 0.588 × 0.1 = {0.588 * 0.1:.4f}\n= 它的占比", xy=(seg_lo + 0.05, density * 0.45),
+                xytext=(seg_lo + 0.32, 0.26), fontsize=FS_SMALL, color=ORANGE, ha="left", va="center", linespacing=1.35, bbox=WHITE_BOX,
+                arrowprops=dict(arrowstyle="-", lw=1.4, color=ORANGE, shrinkA=2, shrinkB=2))
+    panel_title(fig, [ax], "③ 每根柱子再除以格宽：两种切法一样高，蓝绿两线几乎重合")
+    panel_note(fig, [ax], "除以格宽，得到“每 1 伏分到多少概率”——这就是密度，和怎么切无关。\n"
+                          "把格宽乘回去：柱子的面积 = 高 × 宽 = 这一格的概率。")
+    savefig(fig, "ch04_histogram_to_density")
+    plt.close(fig)
+
+# ---------------------------------------------------------------------------
+banner("2c. 画图：figures/ch04_area_is_probability.png（面积才是概率；高度可以超过 1）")
 if not (finite(lo, hi, density) and 0 < width < 3):
     print("  电压范围改得太离谱，这张图跳过。")
 else:
@@ -152,6 +294,54 @@ else:
     panel_note(fig, [ax], "两幅的横向跨度、纵轴都一样：两块浅蓝的面积相等，都是 1。\n密度可以超过 1，概率（面积）不会。")
     savefig(fig, "ch04_area_is_probability")
     plt.close(fig)
+
+# ---------------------------------------------------------------------------
+banner("2d. 画图：figures/ch04_uneven_density.png（密度高低不平时，概率还是面积）")
+fig = plt.figure(figsize=(9.4, 13.2))
+gs = fig.add_gridspec(2, 1, hspace=0.62, left=0.12, right=0.95, top=0.89, bottom=0.11)
+fig.suptitle("密度高低不平时，概率还是面积：跨过台阶就拆成两块", fontsize=FS_TITLE, fontweight="bold", color=INK, y=0.975)
+X_LIM = (OLD_LO - 0.2, OLD_HI + 0.2)
+D_TOP = 1.6
+step_x = [OLD_LO, OLD_LO, OLD_STEP, OLD_STEP, OLD_HI, OLD_HI]
+step_y = [0, h_low, h_low, h_high, h_high, 0]
+
+ax = fig.add_subplot(gs[0])
+data_axes(ax, "电压（伏）", "密度（每伏分到多少概率）")
+ax.set_xlim(*X_LIM)
+ax.set_ylim(0, D_TOP)
+old_edges = OLD_LO + 0.1 * np.arange(int(round((OLD_HI - OLD_LO) / 0.1)) + 1)
+old_frac = np.histogram(old_volts, bins=old_edges)[0] / N_DRAWS
+ax.bar(old_edges[:-1], old_frac / 0.1, width=0.1, align="edge", color="#dbe7f3", edgecolor=FAINT, lw=0.8, zorder=2)
+ax.plot(step_x, step_y, color=BLUE, lw=3, zorder=4)
+ax.axhline(1.0, color=MUTED, ls=":", lw=1.8, zorder=1)
+ax.text(OLD_HI + 0.18, 1.03, "高度 1", fontsize=15, color=MUTED, ha="right", va="bottom")
+ax.text((OLD_LO + OLD_STEP) / 2, h_low + 0.06, f"{OLD_P_LOW:g} ÷ {OLD_STEP - OLD_LO:g} = {h_low:g}", fontsize=FS_SMALL, color=BLUE,
+        ha="center", va="bottom")
+ax.text((OLD_STEP + OLD_HI) / 2, h_high + 0.06, f"{1 - OLD_P_LOW:g} ÷ {OLD_HI - OLD_STEP:g} = {h_high:.3f}", fontsize=FS_SMALL,
+        color=BLUE, ha="center", va="bottom")
+panel_title(fig, [ax], "① 10 万个旧电池的直方图，贴着两级台阶")
+panel_note(fig, [ax], "浅蓝柱子：每 0.1 伏一格，占比 ÷ 格宽（上一张图 ③ 的画法）。\n"
+                      "蓝线是两段的高度。左段高 1.2，比 1 还高：0.6 的概率挤在 0.5 伏里。")
+
+ax = fig.add_subplot(gs[1])
+data_axes(ax, "电压（伏）", "密度（每伏分到多少概率）")
+ax.set_xlim(*X_LIM)
+ax.set_ylim(0, D_TOP)
+ax.fill_between([ask_lo, OLD_STEP], 0, h_low, color=ORANGE, alpha=0.85, zorder=2, lw=0)
+ax.fill_between([OLD_STEP, ask_hi], 0, h_high, color=GREEN, alpha=0.85, zorder=2, lw=0)
+ax.plot(step_x, step_y, color=BLUE, lw=3, zorder=4)
+ax.annotate(f"左块：{h_low:g} × 0.2 = {area_left:.2f}", xy=(ask_lo + 0.1, h_low * 0.7), xytext=(OLD_LO + 0.05, 1.45),
+            fontsize=FS_SMALL, color=ORANGE, ha="left", va="center", bbox=WHITE_BOX,
+            arrowprops=dict(arrowstyle="-", lw=1.4, color=ORANGE, shrinkA=2, shrinkB=2))
+ax.annotate(f"右块：1/3 × 0.2 = {area_right:.4f}", xy=(OLD_STEP + 0.1, h_high * 0.5), xytext=(OLD_STEP + 0.35, 0.62),
+            fontsize=FS_SMALL, color=GREEN, ha="left", va="center", bbox=WHITE_BOX,
+            arrowprops=dict(arrowstyle="-", lw=1.4, color=GREEN, shrinkA=2, shrinkB=2))
+hand(ax, OLD_STEP + 0.35, 1.0, f"合计 {area_left:.2f} + {area_right:.4f} ≈ {p_ask:.3f}", color=INK, ha="left")
+panel_title(fig, [ax], f"② 落在 {ask_lo}–{ask_hi} 伏的概率：两块面积相加")
+panel_note(fig, [ax], f"只看宽度的比例 0.4 ÷ 1.7 = {p_naive:.3f}，是错的：它假装处处一样密。\n"
+                      f"真的抽 10 万个旧电池数一数，落在这一段的占 {frac_ask:.3f}——对上的是面积。")
+savefig(fig, "ch04_uneven_density")
+plt.close(fig)
 
 # ---------------------------------------------------------------------------
 banner("3. 期望：按概率加权的平均")
